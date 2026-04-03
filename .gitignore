@@ -1,0 +1,31 @@
+# Build outputs
+bin/
+obj/
+TestResults/
+
+# Local tool/cache state
+.appdata/
+.dotnet-cli/
+.dotnet-home/
+.nuget/
+
+# Runtime artifacts
+src/Alexei.App/bin/
+src/Alexei.Core/bin/
+tests/**/bin/
+tests/**/obj/
+
+# Captures, logs, dumps
+captures/
+logs/
+*.hex
+*.md.tmp
+
+# User/local files
+*.user
+*.suo
+.vs/
+
+# OS
+Thumbs.db
+.DS_Store

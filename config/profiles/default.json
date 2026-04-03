@@ -1,0 +1,33 @@
+{
+  "combat": {
+    "enabled": false,
+    "aggroRadius": 800,
+    "zHeightLimit": 200,
+    "anchorLeash": 1500,
+    "targetPriority": "nearest",
+    "targetNpcIds": [],
+    "skillRotation": [],
+    "basicAttack": true,
+    "postSkillDelayMs": 100
+  },
+  "buffs": {
+    "enabled": false,
+    "list": []
+  },
+  "party": {
+    "enabled": false,
+    "healRules": [],
+    "buffRules": []
+  },
+  "loot": {
+    "enabled": true,
+    "radius": 400
+  },
+  "recovery": {
+    "enabled": false,
+    "sitBelowHpPct": 30,
+    "sitBelowMpPct": 20,
+    "standAboveHpPct": 80,
+    "standAboveMpPct": 60
+  }
+}

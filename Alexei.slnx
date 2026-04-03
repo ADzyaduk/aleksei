@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Alexei.App/Alexei.App.csproj" />
+    <Project Path="src/Alexei.Core/Alexei.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Alexei.Core.Tests/Alexei.Core.Tests.csproj" />
+  </Folder>
+</Solution>

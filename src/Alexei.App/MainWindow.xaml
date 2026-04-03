@@ -142,6 +142,9 @@
                             <DataGridTextColumn Header="Level" Binding="{Binding Level}" Width="60"/>
                             <DataGridTextColumn Header="Min MP%" Binding="{Binding MinMpPct}" Width="80"/>
                             <DataGridTextColumn Header="CD (ms)" Binding="{Binding CooldownMs}" Width="80"/>
+                            <DataGridTextColumn Header="Target HP ≤" Binding="{Binding TargetHpBelowPct}" Width="90"/>
+                            <DataGridTextColumn Header="Target HP ≥" Binding="{Binding TargetHpAbovePct}" Width="90"/>
+                            <DataGridTextColumn Header="Max Range" Binding="{Binding MaxRange}" Width="90"/>
                         </DataGrid.Columns>
                     </DataGrid>
 
@@ -218,6 +221,7 @@
                             <DataGridTextColumn Header="Skill ID" Binding="{Binding SkillId}" Width="80"/>
                             <DataGridTextColumn Header="HP Threshold" Binding="{Binding HpThreshold}" Width="100"/>
                             <DataGridTextColumn Header="Min MP%" Binding="{Binding MpMinPct}" Width="80"/>
+                            <DataGridTextColumn Header="CD (ms)" Binding="{Binding CooldownMs}" Width="80"/>
                         </DataGrid.Columns>
                     </DataGrid>
                     <TextBlock Text="Party Buff Rules" FontWeight="Bold" Margin="0,16,0,4"/>

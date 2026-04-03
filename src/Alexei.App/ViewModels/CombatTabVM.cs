@@ -59,7 +59,10 @@ public sealed class CombatTabVM : ViewModelBase
             Level = SelectedSkill.Level,
             Enabled = true,
             MinMpPct = 10,
-            CooldownMs = 0
+            CooldownMs = 0,
+            TargetHpBelowPct = 0,
+            TargetHpAbovePct = 0,
+            MaxRange = 0
         });
     }
 

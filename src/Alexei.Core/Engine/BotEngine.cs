@@ -14,6 +14,7 @@ public sealed class BotEngine
     private readonly ILogger? _logger;
     private readonly List<IBotTask> _tasks = new();
     private PacketSender? _sender;
+    private DateTime _anchorRefreshArmedAt = DateTime.MinValue;
 
     public bool IsRunning { get; private set; }
     public string CurrentPhase { get; private set; } = "Idle";
@@ -39,6 +40,22 @@ public sealed class BotEngine
 
     public void Start()
     {
+        if (_world.Me.ObjectId != 0)
+        {
+            _world.Me.AnchorX = _world.Me.X;
+            _world.Me.AnchorY = _world.Me.Y;
+            _world.Me.AnchorZ = _world.Me.Z;
+            _world.Me.AnchorSet = true;
+            _anchorRefreshArmedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            _world.Me.AnchorSet = false;
+            _world.Me.AnchorX = 0;
+            _world.Me.AnchorY = 0;
+            _world.Me.AnchorZ = 0;
+            _anchorRefreshArmedAt = DateTime.MinValue;
+        }
         IsRunning = true;
         SetPhase("Running");
     }
@@ -46,7 +63,11 @@ public sealed class BotEngine
     public void Stop()
     {
         IsRunning = false;
+        _anchorRefreshArmedAt = DateTime.MinValue;
         _world.Me.AnchorSet = false;
+        _world.Me.AnchorX = 0;
+        _world.Me.AnchorY = 0;
+        _world.Me.AnchorZ = 0;
         SetPhase("Stopped");
     }
 
@@ -54,6 +75,17 @@ public sealed class BotEngine
     {
         if (!IsRunning || _sender == null || !_world.IsConnected) return;
         if (_world.Me.ObjectId == 0) return;
+
+        if (_anchorRefreshArmedAt != DateTime.MinValue &&
+            _world.LastSelfMoveEvidenceUtc.HasValue &&
+            _world.LastSelfMoveEvidenceUtc.Value >= _anchorRefreshArmedAt)
+        {
+            _world.Me.AnchorX = _world.Me.X;
+            _world.Me.AnchorY = _world.Me.Y;
+            _world.Me.AnchorZ = _world.Me.Z;
+            _world.Me.AnchorSet = true;
+            _anchorRefreshArmedAt = DateTime.MinValue;
+        }
 
         _world.CleanDeadNpcs(TimeSpan.FromSeconds(30));
         _world.CleanExpiredBuffs();

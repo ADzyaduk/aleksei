@@ -311,7 +311,326 @@ public sealed class CombatStateMachineTests
 
         Assert.Equal(801, world.LastEngagedTargetId);
         Assert.Equal(801, world.Me.PendingTargetId);
-    }    private static CharacterProfile CreateBartzProfile() =>
+    }
+
+    [Fact]
+    public async Task AutoCombat_PrefersNearestCandidateWithinDynamicLocalCluster()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Combat.AggroRadius = 2000;
+        profile.Combat.AnchorLeash = 2000;
+        var task = new AutoCombatTask();
+
+        world.Me.X = 0;
+        world.Me.Y = 0;
+        world.Me.Z = 0;
+
+        world.Npcs[804] = CreateNpc(804, x: 780, y: 0, z: 0);
+        world.Npcs[805] = CreateNpc(805, x: 980, y: 0, z: 0);
+        world.Npcs[806] = CreateNpc(806, x: 1550, y: 0, z: 0);
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        Assert.Equal(804, world.LastEngagedTargetId);
+        Assert.Equal(804, world.Me.PendingTargetId);
+    }
+
+    [Fact]
+    public async Task AutoCombat_RelaxesZFilterForBartz_WhenStrictFilterRejectsEverything()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Combat.AggroRadius = 2000;
+        profile.Combat.ZHeightLimit = 200;
+        profile.Combat.UseTargetEnter = true;
+        var task = new AutoCombatTask();
+
+        world.Me.X = 0;
+        world.Me.Y = 0;
+        world.Me.Z = 0;
+
+        world.Npcs[811] = CreateNpc(811, x: 180, y: 0, z: 500);
+        world.Npcs[812] = CreateNpc(812, x: 260, y: 0, z: 650);
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        Assert.Equal(811, world.LastEngagedTargetId);
+        Assert.Equal(811, world.Me.PendingTargetId);
+    }
+
+    [Fact]
+    public async Task AutoCombat_PrefersRecentAggroTarget_OverNearestNeutral()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Combat.AggroRadius = 1000;
+        var task = new AutoCombatTask();
+
+        world.Me.X = 0;
+        world.Me.Y = 0;
+        world.Me.Z = 0;
+
+        world.Npcs[831] = CreateNpc(831, x: 120, y: 0, z: 0);
+        var aggro = CreateNpc(832, x: 220, y: 0, z: 0);
+        aggro.LastAttackOnMeUtc = DateTime.UtcNow;
+        world.Npcs[832] = aggro;
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        Assert.Equal(832, world.LastEngagedTargetId);
+        Assert.Equal(832, world.Me.PendingTargetId);
+    }
+
+    [Fact]
+    public async Task AutoCombat_UsesOpeningSkill_WhenConditionsMatch_AndRespectsRuleCooldown()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Combat.PostSkillDelayMs = 0;
+        profile.Combat.ReattackIntervalMs = 0;
+        profile.Combat.SkillRotation.Add(new SkillRotationEntry
+        {
+            SkillId = 29,
+            Level = 1,
+            Enabled = true,
+            MinMpPct = 10,
+            CooldownMs = 5000,
+            TargetHpBelowPct = 60,
+            MaxRange = 200
+        });
+
+        var task = new AutoCombatTask();
+        var npc = CreateNpc(901, x: 120, y: 0, z: 0);
+        npc.CurHp = 50;
+        npc.MaxHp = 100;
+        npc.HpPercent = 50;
+
+        world.Me.X = 0;
+        world.Me.Y = 0;
+        world.Me.Z = 0;
+        world.Me.CurMp = 100;
+        world.Me.MaxMp = 100;
+        world.Npcs[npc.ObjectId] = npc;
+        world.Skills[29] = new SkillInfo { SkillId = 29, Level = 1 };
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        world.Me.TargetId = npc.ObjectId;
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        harness.SentPackets.Clear();
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.RequestMagicSkillUse);
+
+        harness.SentPackets.Clear();
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        await Task.Delay(300);
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        Assert.DoesNotContain(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.RequestMagicSkillUse);
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.TargetEnter);
+    }
+
+    [Fact]
+    public async Task AutoCombat_SkipsSkill_WhenServerCooldownActive_AndStillAttacks()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Combat.SkillRotation.Add(new SkillRotationEntry
+        {
+            SkillId = 29,
+            Level = 1,
+            Enabled = true,
+            MinMpPct = 10,
+            CooldownMs = 0
+        });
+
+        var task = new AutoCombatTask();
+        var npc = CreateNpc(902, x: 120, y: 0, z: 0);
+        world.Me.X = 0;
+        world.Me.Y = 0;
+        world.Me.Z = 0;
+        world.Me.CurMp = 100;
+        world.Me.MaxMp = 100;
+        world.Npcs[npc.ObjectId] = npc;
+        var skill = new SkillInfo { SkillId = 29, Level = 1 };
+        skill.SetCooldown(5000);
+        world.Skills[29] = skill;
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        world.Me.TargetId = npc.ObjectId;
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        harness.SentPackets.Clear();
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        Assert.DoesNotContain(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.RequestMagicSkillUse);
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.TargetEnter);
+    }
+
+    [Fact]
+    public async Task AutoCombat_SkipsSkill_WhenMpTargetHpOrRangeConditionsFail_AndFallsBackToAttack()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Combat.SkillRotation.Add(new SkillRotationEntry
+        {
+            SkillId = 29,
+            Level = 1,
+            Enabled = true,
+            MinMpPct = 80,
+            CooldownMs = 0,
+            TargetHpBelowPct = 40,
+            MaxRange = 50
+        });
+
+        var task = new AutoCombatTask();
+        var npc = CreateNpc(903, x: 120, y: 0, z: 0);
+        npc.CurHp = 60;
+        npc.MaxHp = 100;
+        npc.HpPercent = 60;
+
+        world.Me.X = 0;
+        world.Me.Y = 0;
+        world.Me.Z = 0;
+        world.Me.CurMp = 50;
+        world.Me.MaxMp = 100;
+        world.Npcs[npc.ObjectId] = npc;
+        world.Skills[29] = new SkillInfo { SkillId = 29, Level = 1 };
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        world.Me.TargetId = npc.ObjectId;
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        harness.SentPackets.Clear();
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        Assert.DoesNotContain(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.RequestMagicSkillUse);
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.TargetEnter);
+    }
+
+    [Fact]
+    public async Task AutoBuff_DoesNotSpamImmediately_WhenEffectTrackingIsMissing_ButStillRespectsServerCooldown()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Buffs.Enabled = true;
+        profile.Buffs.List.Add(new BuffEntry
+        {
+            SkillId = 120,
+            Level = 1,
+            Enabled = true,
+            IntervalSec = 1200,
+            RebuffOnMissing = true,
+            Target = "self"
+        });
+
+        world.Skills[120] = new SkillInfo { SkillId = 120, Level = 1 };
+        var task = new AutoBuffTask();
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.RequestTargetCancel);
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.RequestMagicSkillUse);
+
+        harness.SentPackets.Clear();
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        Assert.Empty(harness.SentPackets);
+
+        harness.SentPackets.Clear();
+        world.Skills[120].SetCooldown(5000);
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        Assert.Empty(harness.SentPackets);
+
+        harness.SentPackets.Clear();
+        world.Skills[120].CooldownUntil = DateTime.MinValue;
+        var lastCastField = typeof(AutoBuffTask).GetField("_lastCast", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var lastCast = (Dictionary<int, DateTime>)lastCastField.GetValue(task)!;
+        lastCast[120] = DateTime.UtcNow.AddSeconds(-16);
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.RequestMagicSkillUse);
+    }
+
+    [Fact]
+    public async Task AutoHeal_UsesThresholdAndPerSkillCooldown()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Party.Enabled = true;
+        profile.Party.HealRules.Add(new HealRule
+        {
+            SkillId = 121,
+            Level = 1,
+            HpThreshold = 70,
+            MpMinPct = 20,
+            CooldownMs = 5000,
+            Enabled = true
+        });
+
+        world.Me.CurHp = 40;
+        world.Me.MaxHp = 100;
+        world.Me.CurMp = 50;
+        world.Me.MaxMp = 100;
+        world.Skills[121] = new SkillInfo { SkillId = 121, Level = 1 };
+
+        var task = new AutoHealTask();
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.RequestMagicSkillUse);
+
+        harness.SentPackets.Clear();
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        Assert.DoesNotContain(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.RequestMagicSkillUse);
+    }
+
+    [Fact]
+    public async Task PartyHeal_UsesEligibleRule_AndRespectsCooldown()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Party.Enabled = true;
+        profile.Party.HealRules.Add(new HealRule
+        {
+            SkillId = 122,
+            Level = 1,
+            HpThreshold = 70,
+            MpMinPct = 20,
+            CooldownMs = 5000,
+            Enabled = true
+        });
+
+        world.Me.X = 0;
+        world.Me.Y = 0;
+        world.Me.Z = 0;
+        world.Me.CurMp = 50;
+        world.Me.MaxMp = 100;
+        world.Skills[122] = new SkillInfo { SkillId = 122, Level = 1 };
+        world.Party[1] = new PartyMember { ObjectId = 1, Name = "A", CurHp = 40, MaxHp = 100 };
+        world.Party[2] = new PartyMember { ObjectId = 2, Name = "B", CurHp = 90, MaxHp = 100 };
+
+        var task = new PartyHealTask();
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.Action);
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.RequestMagicSkillUse);
+
+        harness.SentPackets.Clear();
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        Assert.Empty(harness.SentPackets);
+    }
+
+    private static CharacterProfile CreateBartzProfile() =>
         new()
         {
             Combat =
@@ -397,6 +716,11 @@ public sealed class CombatStateMachineTests
         }
     }
 }
+
+
+
+
+
 
 
 

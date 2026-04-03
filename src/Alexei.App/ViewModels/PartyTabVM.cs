@@ -51,6 +51,7 @@ public sealed class PartyTabVM : ViewModelBase
             Level = SelectedHealSkill.Level,
             HpThreshold = 70,
             MpMinPct = 10,
+            CooldownMs = 1500,
             Enabled = true
         });
     }

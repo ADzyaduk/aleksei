@@ -24,6 +24,9 @@ public sealed class SkillRotationEntry : NotifyBase
     private int _level = 1; [JsonPropertyName("level")] public int Level { get => _level; set => SetField(ref _level, value); }
     private double _minMpPct = 10; [JsonPropertyName("minMpPct")] public double MinMpPct { get => _minMpPct; set => SetField(ref _minMpPct, value); }
     private int _cooldownMs = 5000; [JsonPropertyName("cooldownMs")] public int CooldownMs { get => _cooldownMs; set => SetField(ref _cooldownMs, value); }
+    private double _targetHpBelowPct; [JsonPropertyName("targetHpBelowPct")] public double TargetHpBelowPct { get => _targetHpBelowPct; set => SetField(ref _targetHpBelowPct, value); }
+    private double _targetHpAbovePct; [JsonPropertyName("targetHpAbovePct")] public double TargetHpAbovePct { get => _targetHpAbovePct; set => SetField(ref _targetHpAbovePct, value); }
+    private double _maxRange; [JsonPropertyName("maxRange")] public double MaxRange { get => _maxRange; set => SetField(ref _maxRange, value); }
     private bool _enabled = true; [JsonPropertyName("enabled")] public bool Enabled { get => _enabled; set => SetField(ref _enabled, value); }
 }
 
@@ -71,6 +74,7 @@ public sealed class HealRule : NotifyBase
     private int _level = 1; [JsonPropertyName("level")] public int Level { get => _level; set => SetField(ref _level, value); }
     private double _hpThreshold = 70; [JsonPropertyName("hpThreshold")] public double HpThreshold { get => _hpThreshold; set => SetField(ref _hpThreshold, value); }
     private double _mpMinPct = 20; [JsonPropertyName("mpMinPct")] public double MpMinPct { get => _mpMinPct; set => SetField(ref _mpMinPct, value); }
+    private int _cooldownMs = 1500; [JsonPropertyName("cooldownMs")] public int CooldownMs { get => _cooldownMs; set => SetField(ref _cooldownMs, value); }
     private bool _enabled = true; [JsonPropertyName("enabled")] public bool Enabled { get => _enabled; set => SetField(ref _enabled, value); }
 }
 

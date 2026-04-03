@@ -10,11 +10,14 @@ namespace Alexei.Core.Engine.Tasks;
 public sealed class AutoCombatTask : IBotTask
 {
     private const int MaxPickupAttemptsPerItem = 3;
+    private const double LocalClusterSlack = 250d;
+    private const double MinimumLocalClusterRadius = 450d;
     public string Name => "AutoCombat";
     public bool IsEnabled => true;
 
     private readonly ILogger? _logger;
     private readonly PacketEvidenceCollector? _collector;
+    private readonly Dictionary<int, DateTime> _skillRuleReadyAt = new();
     private DateTime _lastAttack = DateTime.MinValue;
     private DateTime _lastSkillUse = DateTime.MinValue;
     private DateTime _lastTargetAction = DateTime.MinValue;
@@ -424,11 +427,31 @@ public sealed class AutoCombatTask : IBotTask
             _currentSkillIndex++;
 
             if (!entry.Enabled || entry.SkillId == 0) continue;
-            if (world.Me.MpPct < entry.MinMpPct) continue;
-            if (world.Skills.TryGetValue(entry.SkillId, out var skillInfo) && !skillInfo.IsReady) continue;
+            if (!world.Skills.TryGetValue(entry.SkillId, out var skillInfo)) continue;
+            if (!skillInfo.IsReady)
+            {
+                Trace("skill-skip-cooldown", $"skill={entry.SkillId} source=server");
+                continue;
+            }
+
+            if (DateTime.UtcNow < GetRuleReadyAt(entry.SkillId))
+            {
+                Trace("skill-skip-cooldown", $"skill={entry.SkillId} source=rule");
+                continue;
+            }
+
+            if (world.Me.MpPct < entry.MinMpPct)
+            {
+                Trace("skill-skip-mp", $"skill={entry.SkillId} mp={world.Me.MpPct:0.#} min={entry.MinMpPct:0.#}");
+                continue;
+            }
+
+            if (!TargetConditionsAllow(world, entry))
+                continue;
 
             await sender.SendAsync(BuildSkillPacket(entry.SkillId, combat.CombatSkillPacket), ct);
             _lastSkillUse = DateTime.UtcNow;
+            SetRuleCooldown(entry.SkillId, entry.CooldownMs);
             Debug($"{(openingOnly ? "opening" : "combat")} skill={entry.SkillId} target={_retainedTargetId}");
             return true;
         }
@@ -485,12 +508,58 @@ public sealed class AutoCombatTask : IBotTask
             return retained;
         }
 
+        var candidates = CollectCandidates(world, combat, combat.ZHeightLimit);
+        if (candidates.Count == 0 && combat.UseTargetEnter)
+        {
+            int relaxedZLimit = Math.Max(combat.ZHeightLimit, 1200);
+            candidates = CollectCandidates(world, combat, relaxedZLimit);
+        }
+
+        if (candidates.Count == 0)
+            return null;
+
+        var aggroPool = candidates
+            .Where(c => c.Npc.WasAttackingMeRecent(TimeSpan.FromSeconds(18)))
+            .ToList();
+        if (aggroPool.Count > 0)
+            return SelectBestCandidate(BuildLocalCluster(aggroPool, combat), combat.TargetPriority);
+
+        var pool = BuildLocalCluster(candidates, combat);
+        if (combat.PreferAggroTargets)
+        {
+            var preferredAggroPool = pool
+                .Where(c => c.Npc.WasAttackingMeRecent(TimeSpan.FromSeconds(18)))
+                .ToList();
+            if (preferredAggroPool.Count > 0)
+                pool = preferredAggroPool;
+        }
+
+        return SelectBestCandidate(pool, combat.TargetPriority);
+    }
+
+    private static List<(Npc Npc, double Dist)> BuildLocalCluster(List<(Npc Npc, double Dist)> candidates, CombatConfig combat)
+    {
+        if (candidates.Count == 0)
+            return candidates;
+
+        double nearest = candidates.Min(c => c.Dist);
+        double clusterRadius = Math.Min(
+            combat.AggroRadius,
+            Math.Max(MinimumLocalClusterRadius, nearest + LocalClusterSlack));
+
+        var local = candidates.Where(c => c.Dist <= clusterRadius).ToList();
+        return local.Count > 0 ? local : candidates;
+    }
+
+    private List<(Npc Npc, double Dist)> CollectCandidates(GameWorld world, CombatConfig combat, int zLimit)
+    {
+        var me = world.Me;
         var candidates = new List<(Npc Npc, double Dist)>();
 
         foreach (var npc in world.Npcs.Values)
         {
             if (!npc.IsAttackable || IsNpcEliminated(npc)) continue;
-            if (npc.ZDelta(me) > combat.ZHeightLimit) continue;
+            if (npc.ZDelta(me) > zLimit) continue;
 
             double dist = npc.DistanceTo(me);
             if (dist > combat.AggroRadius) continue;
@@ -509,24 +578,7 @@ public sealed class AutoCombatTask : IBotTask
             candidates.Add((npc, dist));
         }
 
-        if (candidates.Count == 0)
-            return null;
-
-        double localRadius = Math.Min(combat.AggroRadius, Math.Max(450, combat.RetainTargetMaxDist * 2.0));
-        var pool = candidates.Where(c => c.Dist <= localRadius).ToList();
-        if (pool.Count == 0)
-            pool = candidates;
-
-        if (combat.PreferAggroTargets)
-        {
-            var aggroPool = pool
-                .Where(c => c.Npc.WasAttackingMeRecent(TimeSpan.FromSeconds(18)))
-                .ToList();
-            if (aggroPool.Count > 0)
-                pool = aggroPool;
-        }
-
-        return SelectBestCandidate(pool, combat.TargetPriority);
+        return candidates;
     }
 
     private static Npc SelectBestCandidate(List<(Npc Npc, double Dist)> candidates, string targetPriority)
@@ -759,6 +811,47 @@ public sealed class AutoCombatTask : IBotTask
             "39dcc" or "dcc" => GamePackets.UseSkill(skillId, "dcc"),
             _ => GamePackets.UseSkill(skillId, "ddd")
         };
+
+    private bool TargetConditionsAllow(GameWorld world, SkillRotationEntry entry)
+    {
+        if (_retainedTargetId == 0 || !world.Npcs.TryGetValue(_retainedTargetId, out var target))
+            return true;
+
+        if (entry.TargetHpBelowPct > 0 && target.HpPercent > entry.TargetHpBelowPct)
+        {
+            Trace("skill-skip-target-hp", $"skill={entry.SkillId} mode=below hp={target.HpPercent:0.#} limit={entry.TargetHpBelowPct:0.#}");
+            return false;
+        }
+
+        if (entry.TargetHpAbovePct > 0 && target.HpPercent < entry.TargetHpAbovePct)
+        {
+            Trace("skill-skip-target-hp", $"skill={entry.SkillId} mode=above hp={target.HpPercent:0.#} limit={entry.TargetHpAbovePct:0.#}");
+            return false;
+        }
+
+        if (entry.MaxRange > 0)
+        {
+            double distance = target.DistanceTo(world.Me);
+            if (distance > entry.MaxRange)
+            {
+                Trace("skill-skip-range", $"skill={entry.SkillId} dist={distance:0.#} max={entry.MaxRange:0.#}");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private DateTime GetRuleReadyAt(int skillId) =>
+        _skillRuleReadyAt.TryGetValue(skillId, out var readyAt) ? readyAt : DateTime.MinValue;
+
+    private void SetRuleCooldown(int skillId, int cooldownMs)
+    {
+        if (cooldownMs <= 0)
+            _skillRuleReadyAt.Remove(skillId);
+        else
+            _skillRuleReadyAt[skillId] = DateTime.UtcNow.AddMilliseconds(cooldownMs);
+    }
 
     private void Debug(string message)
     {

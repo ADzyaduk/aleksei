@@ -82,6 +82,7 @@ public sealed class CombatStateMachineTests
 
         await Task.Delay(150);
         await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
         Assert.Equal(CombatPhase.Looting, world.CurrentCombatPhase);
 
         await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
@@ -383,6 +384,62 @@ public sealed class CombatStateMachineTests
 
         Assert.Equal(832, world.LastEngagedTargetId);
         Assert.Equal(832, world.Me.PendingTargetId);
+    }
+
+    [Fact]
+    public async Task AutoCombat_RestartsFromRecentCorpseArea_WhenSelfPositionIsStaleAfterLoot()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Combat.AggroRadius = 1500;
+        profile.Combat.AnchorLeash = 4000;
+        profile.Combat.PostKillSpawnWaitMs = 0;
+        profile.Combat.PostKillLootWindowMs = 250;
+
+        var task = new AutoCombatTask();
+        var killedNpc = CreateNpc(951, x: 1200, y: 0, z: 0);
+        var nextNpc = CreateNpc(952, x: 1450, y: 0, z: 0);
+
+        world.Me.X = 0;
+        world.Me.Y = 0;
+        world.Me.Z = 0;
+        world.Npcs[killedNpc.ObjectId] = killedNpc;
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        world.Me.TargetId = killedNpc.ObjectId;
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        killedNpc.IsDead = true;
+        killedNpc.LastDeathEvidenceUtc = DateTime.UtcNow;
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        await Task.Delay(20);
+        for (var i = 0; i < 6 && world.CurrentCombatPhase != CombatPhase.Idle; i++)
+        {
+            await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+            await Task.Delay(100);
+        }
+
+        world.Npcs[nextNpc.ObjectId] = nextNpc;
+
+        for (var i = 0; i < 6 && world.CurrentCombatPhase != CombatPhase.Idle; i++)
+        {
+            await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+            await Task.Delay(100);
+        }
+
+        Assert.Equal(CombatPhase.Idle, world.CurrentCombatPhase);
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        Assert.Equal(CombatPhase.SelectingTarget, world.CurrentCombatPhase);
+        Assert.Equal(nextNpc.ObjectId, world.LastEngagedTargetId);
+        Assert.Equal(nextNpc.ObjectId, world.Me.PendingTargetId);
     }
 
     [Fact]
@@ -716,6 +773,8 @@ public sealed class CombatStateMachineTests
         }
     }
 }
+
+
 
 
 

@@ -12,6 +12,7 @@ public sealed class AutoCombatTask : IBotTask
     private const int MaxPickupAttemptsPerItem = 3;
     private const double LocalClusterSlack = 250d;
     private const double MinimumLocalClusterRadius = 450d;
+    private static readonly TimeSpan RestartSearchOriginWindow = TimeSpan.FromSeconds(20);
     public string Name => "AutoCombat";
     public bool IsEnabled => true;
 
@@ -39,6 +40,10 @@ public sealed class AutoCombatTask : IBotTask
     private int _lootWindowEmptyPolls;
     private DateTime _lastMovementStaleTrace = DateTime.MinValue;
     private DateTime _lastEngageNoProgressTrace = DateTime.MinValue;
+    private DateTime _selectionOriginOverrideUntil = DateTime.MinValue;
+    private int _selectionOriginX;
+    private int _selectionOriginY;
+    private int _selectionOriginZ;
 
     public AutoCombatTask(ILogger? logger = null, PacketEvidenceCollector? collector = null)
     {
@@ -139,6 +144,7 @@ public sealed class AutoCombatTask : IBotTask
         _lastTargetAction = DateTime.UtcNow;
 
         Debug($"picked target={target.ObjectId} npcId={target.NpcId} pos=({target.X},{target.Y},{target.Z}) dist={target.DistanceTo(me):F0}");
+        ClearSelectionOriginOverride();
         await sender.SendAsync(BuildTargetPacket(target, combat, world), ct);
         SetPhase(world, CombatPhase.SelectingTarget, $"select target={target.ObjectId}");
     }
@@ -509,10 +515,31 @@ public sealed class AutoCombatTask : IBotTask
         }
 
         var candidates = CollectCandidates(world, combat, combat.ZHeightLimit);
+        if (candidates.Count == 0 && HasSelectionOriginOverride())
+        {
+            candidates = CollectCandidates(
+                world,
+                combat,
+                combat.ZHeightLimit,
+                _selectionOriginX,
+                _selectionOriginY,
+                _selectionOriginZ);
+        }
+
         if (candidates.Count == 0 && combat.UseTargetEnter)
         {
             int relaxedZLimit = Math.Max(combat.ZHeightLimit, 1200);
             candidates = CollectCandidates(world, combat, relaxedZLimit);
+            if (candidates.Count == 0 && HasSelectionOriginOverride())
+            {
+                candidates = CollectCandidates(
+                    world,
+                    combat,
+                    relaxedZLimit,
+                    _selectionOriginX,
+                    _selectionOriginY,
+                    _selectionOriginZ);
+            }
         }
 
         if (candidates.Count == 0)
@@ -552,6 +579,9 @@ public sealed class AutoCombatTask : IBotTask
     }
 
     private List<(Npc Npc, double Dist)> CollectCandidates(GameWorld world, CombatConfig combat, int zLimit)
+        => CollectCandidates(world, combat, zLimit, world.Me.X, world.Me.Y, world.Me.Z);
+
+    private List<(Npc Npc, double Dist)> CollectCandidates(GameWorld world, CombatConfig combat, int zLimit, int originX, int originY, int originZ)
     {
         var me = world.Me;
         var candidates = new List<(Npc Npc, double Dist)>();
@@ -559,9 +589,13 @@ public sealed class AutoCombatTask : IBotTask
         foreach (var npc in world.Npcs.Values)
         {
             if (!npc.IsAttackable || IsNpcEliminated(npc)) continue;
-            if (npc.ZDelta(me) > zLimit) continue;
+            int zDelta = Math.Abs(npc.Z - originZ);
+            if (zDelta > zLimit) continue;
 
-            double dist = npc.DistanceTo(me);
+            double dx = npc.X - originX;
+            double dy = npc.Y - originY;
+            double dz = npc.Z - originZ;
+            double dist = Math.Sqrt(dx * dx + dy * dy + dz * dz);
             if (dist > combat.AggroRadius) continue;
 
             if (combat.TargetNpcIds.Count > 0 && !combat.TargetNpcIds.Contains(npc.NpcId))
@@ -701,7 +735,19 @@ public sealed class AutoCombatTask : IBotTask
         if (!npc.IsAttackable) return false;
         if (IsNpcEliminated(npc)) return false;
         if (npc.ZDelta(world.Me) > combat.ZHeightLimit) return false;
-        return npc.DistanceTo(world.Me) <= Math.Max(combat.AggroRadius * 1.5, combat.RetainTargetMaxDist);
+        if (npc.DistanceTo(world.Me) <= Math.Max(combat.AggroRadius * 1.5, combat.RetainTargetMaxDist))
+            return true;
+
+        if (HasSelectionOriginOverride())
+        {
+            double dx = npc.X - _selectionOriginX;
+            double dy = npc.Y - _selectionOriginY;
+            double dz = npc.Z - _selectionOriginZ;
+            double originDist = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+            return originDist <= Math.Max(combat.AggroRadius * 1.5, combat.RetainTargetMaxDist);
+        }
+
+        return false;
     }
 
     private bool IsTargetEliminated(GameWorld world, int targetId)
@@ -736,6 +782,13 @@ public sealed class AutoCombatTask : IBotTask
     private void BeginPostKill(GameWorld world, string reason)
     {
         _postKillTargetId = _retainedTargetId != 0 ? _retainedTargetId : world.LastEngagedTargetId;
+        if (_postKillTargetId != 0 && world.Npcs.TryGetValue(_postKillTargetId, out var corpseAnchor))
+        {
+            _selectionOriginX = corpseAnchor.X;
+            _selectionOriginY = corpseAnchor.Y;
+            _selectionOriginZ = corpseAnchor.Z;
+            _selectionOriginOverrideUntil = DateTime.UtcNow.Add(RestartSearchOriginWindow);
+        }
         _retainedTargetId = 0;
         world.LastEngagedTargetId = 0;
         _postKillCancelledTarget = false;
@@ -773,7 +826,18 @@ public sealed class AutoCombatTask : IBotTask
         world.Me.PendingTargetId = 0;
         Trace("target-cleared", $"reason={reason}");
         world.LastEngagedTargetId = 0;
+        ClearSelectionOriginOverride();
         SetPhase(world, CombatPhase.Idle, reason);
+    }
+
+    private bool HasSelectionOriginOverride() => DateTime.UtcNow <= _selectionOriginOverrideUntil;
+
+    private void ClearSelectionOriginOverride()
+    {
+        _selectionOriginOverrideUntil = DateTime.MinValue;
+        _selectionOriginX = 0;
+        _selectionOriginY = 0;
+        _selectionOriginZ = 0;
     }
 
     private void SetPhase(GameWorld world, CombatPhase phase, string reason)

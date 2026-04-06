@@ -29,9 +29,11 @@ public sealed class BotEngine
 
         _tasks.Add(new RecoveryTask());
         _tasks.Add(new AnchorTask());
-        _tasks.Add(new AutoBuffTask());
-        _tasks.Add(new PartyHealTask());
+        _tasks.Add(new AutoBuffTask(collector));
+        _tasks.Add(new PartyHealTask(collector));
         _tasks.Add(new AutoHealTask());
+        _tasks.Add(new PartyBuffTask(collector));
+        _tasks.Add(new PartyModeTask(collector));
         _tasks.Add(new AutoCombatTask(logger, collector));
         _tasks.Add(new AutoLootTask(collector));
     }

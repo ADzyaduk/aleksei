@@ -58,4 +58,42 @@ public sealed class ProfileManagerTests
                 Directory.Delete(dir, recursive: true);
         }
     }
+    [Fact]
+    public void SaveAndReload_PreservesPartyModeSettings()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "alexei-profile-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+
+        try
+        {
+            var manager = new ProfileManager(dir);
+            manager.LoadForCharacter("changolist", "bartz");
+            manager.Current.Party.Enabled = true;
+            manager.Current.Party.Mode = PartyMode.Assist;
+            manager.Current.Party.LeaderName = "Leader";
+            manager.Current.Party.AssistName = "";
+            manager.Current.Party.FollowDistance = 175;
+            manager.Current.Party.RepathDistance = 425;
+            manager.Current.Party.PositionTimeoutMs = 2500;
+
+            manager.Save();
+
+            var reloaded = new ProfileManager(dir);
+            reloaded.LoadForCharacter("changolist", "bartz");
+
+            Assert.True(reloaded.Current.Party.Enabled);
+            Assert.Equal(PartyMode.Assist, reloaded.Current.Party.Mode);
+            Assert.Equal("Leader", reloaded.Current.Party.LeaderName);
+            Assert.Equal(string.Empty, reloaded.Current.Party.AssistName);
+            Assert.Equal(175, reloaded.Current.Party.FollowDistance);
+            Assert.Equal(425, reloaded.Current.Party.RepathDistance);
+            Assert.Equal(2500, reloaded.Current.Party.PositionTimeoutMs);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
 }
+

@@ -62,6 +62,13 @@ public sealed class AutoCombatTask : IBotTask
             return;
         }
 
+        if (profile.Party.Enabled && profile.Party.Mode != PartyMode.None)
+        {
+            if (_phase != CombatPhase.Idle || world.CurrentCombatPhase != CombatPhase.Idle || world.Me.TargetId != 0 || world.Me.PendingTargetId != 0)
+                ResetCombatState(world, "party mode active");
+            return;
+        }
+
         if (me.IsDead)
         {
             SetPhase(world, CombatPhase.Recovering, "me dead");
@@ -545,12 +552,6 @@ public sealed class AutoCombatTask : IBotTask
         if (candidates.Count == 0)
             return null;
 
-        var aggroPool = candidates
-            .Where(c => c.Npc.WasAttackingMeRecent(TimeSpan.FromSeconds(18)))
-            .ToList();
-        if (aggroPool.Count > 0)
-            return SelectBestCandidate(BuildLocalCluster(aggroPool, combat), combat.TargetPriority);
-
         var pool = BuildLocalCluster(candidates, combat);
         if (combat.PreferAggroTargets)
         {
@@ -925,22 +926,3 @@ public sealed class AutoCombatTask : IBotTask
         _logger?.LogInformation("[AutoCombat] {Message}", message);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

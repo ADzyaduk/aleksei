@@ -1,4 +1,5 @@
 using Alexei.Core.Config;
+using Alexei.Core.Diagnostics;
 using Alexei.Core.GameState;
 using Alexei.Core.Protocol;
 using Alexei.Core.Proxy;
@@ -10,19 +11,29 @@ public sealed class PartyHealTask : IBotTask
     public string Name => "PartyHeal";
     public bool IsEnabled => true;
 
+    private readonly PacketEvidenceCollector? _collector;
     private readonly Dictionary<int, DateTime> _lastHealBySkill = new();
+    private string? _lastTraceKey;
+    private DateTime _lastTraceUtc = DateTime.MinValue;
+
+    public PartyHealTask(PacketEvidenceCollector? collector = null)
+    {
+        _collector = collector;
+    }
 
     public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         if (!profile.Party.Enabled) return;
         if (world.Me.IsDead || world.Party.IsEmpty) return;
 
-        // Find party member most in need of heal
         PartyMember? target = null;
         HealRule? bestRule = null;
 
         foreach (var member in world.Party.Values)
         {
+            if (!member.HasVitals)
+                continue;
+
             foreach (var rule in profile.Party.HealRules)
             {
                 if (!rule.Enabled || rule.SkillId == 0) continue;
@@ -44,16 +55,23 @@ public sealed class PartyHealTask : IBotTask
             }
         }
 
-        if (target == null || bestRule == null) return;
+        if (target == null || bestRule == null)
+        {
+            Trace("no-eligible-target", "skip reason=no-eligible-target");
+            return;
+        }
 
-        // Target the party member (shift-click = no attack)
-        await sender.SendAsync(GamePackets.Action(target.ObjectId, world.Me.X, world.Me.Y, world.Me.Z, 1));
+        var targetPacket = profile.Combat.UseTargetEnter
+            ? GamePackets.TargetEnter(target.ObjectId, world.Me.X, world.Me.Y, world.Me.Z)
+            : GamePackets.Action(target.ObjectId, world.Me.X, world.Me.Y, world.Me.Z, 1);
+
+        await sender.SendAsync(targetPacket, ct);
         await Task.Delay(150, ct);
 
-        // Cast heal
         var pkt = BuildSkillPacket(bestRule.SkillId, profile.Combat.CombatSkillPacket);
-        await sender.SendAsync(pkt);
+        await sender.SendAsync(pkt, ct);
         _lastHealBySkill[bestRule.SkillId] = DateTime.UtcNow;
+        Trace($"cast:{bestRule.SkillId}:{target.ObjectId}", $"cast skill={bestRule.SkillId} target={target.ObjectId} hpPct={target.HpPct:F1}");
     }
 
     private static (byte opcode, byte[] payload) BuildSkillPacket(int skillId, string? packetType) =>
@@ -64,4 +82,15 @@ public sealed class PartyHealTask : IBotTask
             "39dcc" or "dcc" => GamePackets.UseSkill(skillId, "dcc"),
             _ => GamePackets.UseSkill(skillId, "ddd")
         };
+
+    private void Trace(string key, string message)
+    {
+        var now = DateTime.UtcNow;
+        if (string.Equals(_lastTraceKey, key, StringComparison.Ordinal) && now - _lastTraceUtc < TimeSpan.FromSeconds(1))
+            return;
+
+        _lastTraceKey = key;
+        _lastTraceUtc = now;
+        _collector?.RecordBehavior("PartyHeal", message);
+    }
 }

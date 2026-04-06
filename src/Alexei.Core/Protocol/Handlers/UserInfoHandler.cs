@@ -24,7 +24,6 @@ public sealed class UserInfoHandler : IPacketHandler
         me.Level = r.ReadInt32();
         me.Exp = r.ReadInt64();
 
-        // STR, DEX, CON, INT, WIT, MEN
         r.Skip(6 * 4);
 
         me.MaxHp = r.ReadInt32();
@@ -33,13 +32,10 @@ public sealed class UserInfoHandler : IPacketHandler
         me.CurMp = r.ReadInt32();
         me.SP = r.ReadInt32();
 
-        // Clear dead flag on respawn (HP > 0 means alive)
         if (me.CurHp > 0)
             me.IsDead = false;
 
-        // Skip remaining fields (load, equipment, etc.)
-        // We'll parse more as needed
-
+        world.PositionConfidence = PositionConfidence.Low;
         world.NotifyUpdated();
     }
 }

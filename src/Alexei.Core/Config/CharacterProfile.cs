@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -16,6 +16,14 @@ public abstract class NotifyBase : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         return true;
     }
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter<PartyMode>))]
+public enum PartyMode
+{
+    None,
+    Follow,
+    Assist
 }
 
 public sealed class SkillRotationEntry : NotifyBase
@@ -48,7 +56,7 @@ public sealed class CombatConfig
     [JsonPropertyName("postKillLootWindowMs")] public int PostKillLootWindowMs { get; set; } = 2500;
     /// <summary>"2f" = shortcut bar (Teon); "39dcb" = MagicSkillUse dcb format (Bartz); "39ddd" = ddd.</summary>
     [JsonPropertyName("combatSkillPacket")] public string CombatSkillPacket { get; set; } = "2f";
-    /// <summary>true for Bartz — use 0x1F TargetEnter for targeting/loot instead of 0x04 Action / 0x48 GetItem.</summary>
+    /// <summary>true for Bartz - use 0x1F TargetEnter for targeting/loot instead of 0x04 Action / 0x48 GetItem.</summary>
     [JsonPropertyName("useTargetEnter")] public bool UseTargetEnter { get; set; } = false;
 }
 
@@ -81,6 +89,12 @@ public sealed class HealRule : NotifyBase
 public sealed class PartyConfig
 {
     [JsonPropertyName("enabled")] public bool Enabled { get; set; }
+    [JsonPropertyName("mode")] public PartyMode Mode { get; set; } = PartyMode.None;
+    [JsonPropertyName("leaderName")] public string LeaderName { get; set; } = string.Empty;
+    [JsonPropertyName("assistName")] public string AssistName { get; set; } = string.Empty;
+    [JsonPropertyName("followDistance")] public double FollowDistance { get; set; } = 150;
+    [JsonPropertyName("repathDistance")] public double RepathDistance { get; set; } = 300;
+    [JsonPropertyName("positionTimeoutMs")] public int PositionTimeoutMs { get; set; } = 2000;
     [JsonPropertyName("healRules")] public List<HealRule> HealRules { get; set; } = new();
     [JsonPropertyName("buffRules")] public List<BuffEntry> BuffRules { get; set; } = new();
 }

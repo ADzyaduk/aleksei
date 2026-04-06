@@ -368,6 +368,7 @@ public sealed class CombatStateMachineTests
         await using var harness = await PacketSenderHarness.CreateAsync();
         var world = new GameWorld();
         var profile = CreateBartzProfile();
+        profile.Combat.PreferAggroTargets = true;
         profile.Combat.AggroRadius = 1000;
         var task = new AutoCombatTask();
 
@@ -384,6 +385,31 @@ public sealed class CombatStateMachineTests
 
         Assert.Equal(832, world.LastEngagedTargetId);
         Assert.Equal(832, world.Me.PendingTargetId);
+    }
+
+    [Fact]
+    public async Task AutoCombat_DoesNotPreferAggroTarget_WhenPreferenceDisabled()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Combat.PreferAggroTargets = false;
+        profile.Combat.AggroRadius = 1000;
+        var task = new AutoCombatTask();
+
+        world.Me.X = 0;
+        world.Me.Y = 0;
+        world.Me.Z = 0;
+
+        world.Npcs[841] = CreateNpc(841, x: 120, y: 0, z: 0);
+        var aggro = CreateNpc(842, x: 320, y: 0, z: 0);
+        aggro.LastAttackOnMeUtc = DateTime.UtcNow;
+        world.Npcs[842] = aggro;
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        Assert.Equal(841, world.LastEngagedTargetId);
+        Assert.Equal(841, world.Me.PendingTargetId);
     }
 
     [Fact]
@@ -679,7 +705,7 @@ public sealed class CombatStateMachineTests
         var task = new PartyHealTask();
 
         await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
-        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.Action);
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.TargetEnter);
         Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.RequestMagicSkillUse);
 
         harness.SentPackets.Clear();
@@ -773,23 +799,3 @@ public sealed class CombatStateMachineTests
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

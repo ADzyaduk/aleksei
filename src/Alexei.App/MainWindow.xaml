@@ -1,9 +1,9 @@
-<Window x:Class="Alexei.App.MainWindow"
+﻿<Window x:Class="Alexei.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:Alexei.App.ViewModels"
         xmlns:local="clr-namespace:Alexei.App"
-        Title="Alexei — L2 Bot" Height="700" Width="1000"
+        Title="Alexei вЂ” L2 Bot" Height="700" Width="1000"
         Background="{StaticResource BgBrush}"
                FontFamily="Consolas" FontSize="13">
 
@@ -15,17 +15,17 @@
         <!-- Top toolbar -->
         <Border DockPanel.Dock="Top" Background="{StaticResource BgLightBrush}" Padding="8,4">
             <StackPanel Orientation="Horizontal">
-                <Button Content="▶ Start Proxy" Command="{Binding StartProxyCommand}"
+                <Button Content="в–¶ Start Proxy" Command="{Binding StartProxyCommand}"
                         Margin="0,0,8,0" Padding="12,4" Background="#2E7D32" Foreground="White" BorderThickness="0"/>
-                <Button Content="■ Stop Proxy" Command="{Binding StopProxyCommand}"
+                <Button Content="в–  Stop Proxy" Command="{Binding StopProxyCommand}"
                         Margin="0,0,16,0" Padding="12,4" Background="#C62828" Foreground="White" BorderThickness="0"/>
-                <Button Content="🤖 Start Bot" Command="{Binding StartBotCommand}"
+                <Button Content="рџ¤– Start Bot" Command="{Binding StartBotCommand}"
                         Margin="0,0,8,0" Padding="12,4" Background="#1565C0" Foreground="White" BorderThickness="0"/>
-                <Button Content="⏹ Stop Bot" Command="{Binding StopBotCommand}"
+                <Button Content="вЏ№ Stop Bot" Command="{Binding StopBotCommand}"
                         Margin="0,0,16,0" Padding="12,4" Background="#E65100" Foreground="White" BorderThickness="0"/>
-                <Button Content="💾 Save Profile" Command="{Binding SaveProfileCommand}"
+                <Button Content="рџ’ѕ Save Profile" Command="{Binding SaveProfileCommand}"
                         Padding="12,4" Background="#37474F" Foreground="White" BorderThickness="0"/>
-                <Button Content="🪑 Test Sit" Command="{Binding TestSitCommand}"
+                <Button Content="рџЄ‘ Test Sit" Command="{Binding TestSitCommand}"
                         Margin="16,0,0,0" Padding="12,4" Background="#6A1B9A" Foreground="White" BorderThickness="0"/>
                 <TextBlock Text="{Binding CharName}" Margin="20,0,0,0" VerticalAlignment="Center"
                            Foreground="{StaticResource AccentBrush}" FontWeight="Bold"/>
@@ -128,7 +128,7 @@
                                   DisplayMemberPath="Display" Width="220"                                  ToolTip="Select from your character's skills"/>
                         <Button Content="+ Add" Command="{Binding AddSkillCommand}"
                                 Margin="6,0,4,0" Padding="10,3" Background="#1565C0" Foreground="White" BorderThickness="0"/>
-                        <Button Content="− Remove" Command="{Binding RemoveSkillCommand}"
+                        <Button Content="в€’ Remove" Command="{Binding RemoveSkillCommand}"
                                 Padding="10,3" Background="#B71C1C" Foreground="White" BorderThickness="0"/>
                     </StackPanel>
                     <DataGrid ItemsSource="{Binding SkillRotation}" SelectedItem="{Binding SelectedRotationEntry}"
@@ -142,8 +142,8 @@
                             <DataGridTextColumn Header="Level" Binding="{Binding Level}" Width="60"/>
                             <DataGridTextColumn Header="Min MP%" Binding="{Binding MinMpPct}" Width="80"/>
                             <DataGridTextColumn Header="CD (ms)" Binding="{Binding CooldownMs}" Width="80"/>
-                            <DataGridTextColumn Header="Target HP ≤" Binding="{Binding TargetHpBelowPct}" Width="90"/>
-                            <DataGridTextColumn Header="Target HP ≥" Binding="{Binding TargetHpAbovePct}" Width="90"/>
+                            <DataGridTextColumn Header="Target HP в‰¤" Binding="{Binding TargetHpBelowPct}" Width="90"/>
+                            <DataGridTextColumn Header="Target HP в‰Ґ" Binding="{Binding TargetHpAbovePct}" Width="90"/>
                             <DataGridTextColumn Header="Max Range" Binding="{Binding MaxRange}" Width="90"/>
                         </DataGrid.Columns>
                     </DataGrid>
@@ -154,7 +154,7 @@
                     <StackPanel Orientation="Horizontal" Margin="0,4">
                         <TextBlock Text="Spoil Skill ID:" VerticalAlignment="Center" Width="110"/>
                         <TextBox Text="{Binding SpoilSkillId}" Width="70"/>
-                        <Button Content="← Use Selected" Command="{Binding SetSpoilSkillCommand}"
+                        <Button Content="в†ђ Use Selected" Command="{Binding SetSpoilSkillCommand}"
                                 Margin="8,0,0,0" Padding="8,3" Background="#37474F" Foreground="White" BorderThickness="0"
                                 ToolTip="Set Spoil Skill ID from the selected skill above"/>
                         <TextBlock Text="Max Attempts:" VerticalAlignment="Center" Margin="16,0,6,0"/>
@@ -179,7 +179,7 @@
                                   DisplayMemberPath="Display" Width="220"                                  ToolTip="Select from your character's skills"/>
                         <Button Content="+ Add Buff" Command="{Binding AddBuffCommand}"
                                 Margin="6,0,4,0" Padding="10,3" Background="#1565C0" Foreground="White" BorderThickness="0"/>
-                        <Button Content="− Remove" Command="{Binding RemoveBuffCommand}"
+                        <Button Content="в€’ Remove" Command="{Binding RemoveBuffCommand}"
                                 Padding="10,3" Background="#B71C1C" Foreground="White" BorderThickness="0"/>
                     </StackPanel>
                     <DataGrid ItemsSource="{Binding BuffList}" SelectedItem="{Binding SelectedBuff}"
@@ -197,19 +197,39 @@
                         </DataGrid.Columns>
                     </DataGrid>
                 </StackPanel>
-            </TabItem>
-
-            <!-- Party Tab -->
+            </TabItem>            <!-- Party Tab -->
             <TabItem Header="Party" DataContext="{Binding Party}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="16">
                     <CheckBox Content="Enable Party Support" IsChecked="{Binding Enabled}"/>
+
+                    <TextBlock Text="Party Mode" FontWeight="Bold" Margin="0,12,0,4"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="Mode:" VerticalAlignment="Center" Width="120"/>
+                        <ComboBox ItemsSource="{Binding AvailableModes}" SelectedItem="{Binding Mode}" Width="180"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Leader Name:" VerticalAlignment="Center" Width="120"/>
+                        <TextBox Text="{Binding LeaderName}" Width="180"/>
+                        <TextBlock Text="Assist Name:" VerticalAlignment="Center" Margin="16,0,6,0"/>
+                        <TextBox Text="{Binding AssistName}" Width="180"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Follow Distance:" VerticalAlignment="Center" Width="120"/>
+                        <TextBox Text="{Binding FollowDistance}" Width="80"/>
+                        <TextBlock Text="Repath Distance:" VerticalAlignment="Center" Margin="16,0,6,0"/>
+                        <TextBox Text="{Binding RepathDistance}" Width="80"/>
+                        <TextBlock Text="Position Timeout (ms):" VerticalAlignment="Center" Margin="16,0,6,0"/>
+                        <TextBox Text="{Binding PositionTimeoutMs}" Width="90"/>
+                    </StackPanel>
+
                     <TextBlock Text="Heal Rules" FontWeight="Bold" Margin="0,12,0,4"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                         <ComboBox ItemsSource="{Binding AvailableSkills}" SelectedItem="{Binding SelectedHealSkill}"
-                                  DisplayMemberPath="Display" Width="220"                                  ToolTip="Select heal skill from your character's skills"/>
+                                  DisplayMemberPath="Display" Width="220" ToolTip="Select heal skill from your character's skills"/>
                         <Button Content="+ Add Heal" Command="{Binding AddHealRuleCommand}"
                                 Margin="6,0,4,0" Padding="10,3" Background="#1565C0" Foreground="White" BorderThickness="0"/>
-                        <Button Content="− Remove" Command="{Binding RemoveHealRuleCommand}"
+                        <Button Content="- Remove" Command="{Binding RemoveHealRuleCommand}"
                                 Padding="10,3" Background="#B71C1C" Foreground="White" BorderThickness="0"/>
                     </StackPanel>
                     <DataGrid ItemsSource="{Binding HealRules}" SelectedItem="{Binding SelectedHealRule}"
@@ -224,13 +244,14 @@
                             <DataGridTextColumn Header="CD (ms)" Binding="{Binding CooldownMs}" Width="80"/>
                         </DataGrid.Columns>
                     </DataGrid>
+
                     <TextBlock Text="Party Buff Rules" FontWeight="Bold" Margin="0,16,0,4"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                         <ComboBox ItemsSource="{Binding AvailableSkills}" SelectedItem="{Binding SelectedBuffSkill}"
-                                  DisplayMemberPath="Display" Width="220"                                  ToolTip="Select buff skill from your character's skills"/>
+                                  DisplayMemberPath="Display" Width="220" ToolTip="Select buff skill from your character's skills"/>
                         <Button Content="+ Add Buff" Command="{Binding AddBuffRuleCommand}"
                                 Margin="6,0,4,0" Padding="10,3" Background="#1565C0" Foreground="White" BorderThickness="0"/>
-                        <Button Content="− Remove" Command="{Binding RemoveBuffRuleCommand}"
+                        <Button Content="- Remove" Command="{Binding RemoveBuffRuleCommand}"
                                 Padding="10,3" Background="#B71C1C" Foreground="White" BorderThickness="0"/>
                     </StackPanel>
                     <DataGrid ItemsSource="{Binding BuffRules}" SelectedItem="{Binding SelectedBuffRule}"
@@ -245,6 +266,7 @@
                         </DataGrid.Columns>
                     </DataGrid>
                 </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
             <!-- Loot Tab -->
@@ -328,3 +350,4 @@
         </TabControl>
     </DockPanel>
 </Window>
+

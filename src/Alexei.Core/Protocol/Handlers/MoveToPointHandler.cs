@@ -31,6 +31,24 @@ public sealed class MoveToPointHandler : IPacketHandler
             world.PositionConfidence = PositionConfidence.Confirmed;
             world.NotifyUpdated();
         }
+        else if (world.Party.TryGetValue(objectId, out var member))
+        {
+            member.X = destX;
+            member.Y = destY;
+            member.Z = destZ;
+            member.LastPositionUpdateUtc = now;
+            member.LastUpdateUtc = now;
+            world.NotifyUpdated();
+        }
+        else if (world.Characters.TryGetValue(objectId, out var character))
+        {
+            character.X = destX;
+            character.Y = destY;
+            character.Z = destZ;
+            character.LastPositionUpdateUtc = now;
+            character.LastUpdateUtc = now;
+            world.NotifyUpdated();
+        }
         else if (world.Npcs.TryGetValue(objectId, out var npc))
         {
             npc.X = origX;

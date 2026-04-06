@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Windows.Input;
 using Alexei.App.Infrastructure;
 using Alexei.Core.Config;
@@ -10,9 +10,30 @@ public sealed class PartyTabVM : ViewModelBase
 {
     private readonly ProfileManager _pm;
 
-    private bool _enabled; public bool Enabled { get => _enabled; set => SetField(ref _enabled, value); }
+    private bool _enabled;
+    public bool Enabled { get => _enabled; set => SetField(ref _enabled, value); }
 
+    private PartyMode _mode;
+    public PartyMode Mode { get => _mode; set => SetField(ref _mode, value); }
+
+    private string _leaderName = string.Empty;
+    public string LeaderName { get => _leaderName; set => SetField(ref _leaderName, value); }
+
+    private string _assistName = string.Empty;
+    public string AssistName { get => _assistName; set => SetField(ref _assistName, value); }
+
+    private double _followDistance = 150;
+    public double FollowDistance { get => _followDistance; set => SetField(ref _followDistance, value); }
+
+    private double _repathDistance = 300;
+    public double RepathDistance { get => _repathDistance; set => SetField(ref _repathDistance, value); }
+
+    private int _positionTimeoutMs = 2000;
+    public int PositionTimeoutMs { get => _positionTimeoutMs; set => SetField(ref _positionTimeoutMs, value); }
+
+    public IReadOnlyList<PartyMode> AvailableModes { get; } = Enum.GetValues<PartyMode>();
     public ObservableCollection<SkillPickerItem> AvailableSkills { get; } = new();
+
     private SkillPickerItem? _selectedHealSkill;
     public SkillPickerItem? SelectedHealSkill { get => _selectedHealSkill; set => SetField(ref _selectedHealSkill, value); }
 
@@ -71,7 +92,7 @@ public sealed class PartyTabVM : ViewModelBase
             Level = SelectedBuffSkill.Level,
             IntervalSec = 1200,
             RebuffOnMissing = true,
-            Target = "party",
+            Target = "leader",
             Enabled = true
         });
     }
@@ -105,6 +126,13 @@ public sealed class PartyTabVM : ViewModelBase
     {
         var p = _pm.Current.Party;
         Enabled = p.Enabled;
+        Mode = p.Mode;
+        LeaderName = p.LeaderName;
+        AssistName = p.AssistName;
+        FollowDistance = p.FollowDistance;
+        RepathDistance = p.RepathDistance;
+        PositionTimeoutMs = p.PositionTimeoutMs;
+
         HealRules.Clear();
         foreach (var r in p.HealRules) HealRules.Add(r);
         BuffRules.Clear();
@@ -115,9 +143,14 @@ public sealed class PartyTabVM : ViewModelBase
     {
         var p = _pm.Current.Party;
         p.Enabled = Enabled;
+        p.Mode = Mode;
+        p.LeaderName = LeaderName?.Trim() ?? string.Empty;
+        p.AssistName = AssistName?.Trim() ?? string.Empty;
+        p.FollowDistance = FollowDistance;
+        p.RepathDistance = RepathDistance;
+        p.PositionTimeoutMs = PositionTimeoutMs;
         p.HealRules = new List<HealRule>(HealRules);
         p.BuffRules = new List<BuffEntry>(BuffRules);
     }
 }
-
 

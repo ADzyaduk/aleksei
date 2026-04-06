@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 
 namespace Alexei.Core.GameState;
 
@@ -8,6 +8,7 @@ public sealed class GameWorld
     public ConcurrentDictionary<int, Npc> Npcs { get; } = new();
     public ConcurrentDictionary<int, GroundItem> Items { get; } = new();
     public ConcurrentDictionary<int, PartyMember> Party { get; } = new();
+    public ConcurrentDictionary<int, PartyMember> Characters { get; } = new();
     public ConcurrentDictionary<int, SkillInfo> Skills { get; } = new();
     public ConcurrentDictionary<int, AbnormalEffect> Buffs { get; } = new(); // self buffs
     public ConcurrentDictionary<int, SpoilStatus> SpoiledNpcs { get; } = new();
@@ -15,6 +16,7 @@ public sealed class GameWorld
     public bool IsConnected { get; set; }
     public bool IsOpcodeDetected { get; set; }
     public byte OpcodeXorKey { get; set; }
+    public int PartyLeaderObjectId { get; set; }
     public CombatPhase CurrentCombatPhase { get; private set; } = CombatPhase.Idle;
     public DateTime CombatPhaseChangedUtc { get; private set; } = DateTime.UtcNow;
     public int LastEngagedTargetId { get; set; }
@@ -34,9 +36,6 @@ public sealed class GameWorld
         NotifyUpdated();
     }
 
-    /// <summary>
-    /// Clean dead NPCs older than the given threshold.
-    /// </summary>
     public void CleanDeadNpcs(TimeSpan threshold)
     {
         var now = DateTime.UtcNow;
@@ -47,9 +46,6 @@ public sealed class GameWorld
         }
     }
 
-    /// <summary>
-    /// Remove expired buffs.
-    /// </summary>
     public void CleanExpiredBuffs()
     {
         foreach (var kvp in Buffs)
@@ -64,11 +60,13 @@ public sealed class GameWorld
         Npcs.Clear();
         Items.Clear();
         Party.Clear();
+        Characters.Clear();
         Skills.Clear();
         Buffs.Clear();
         SpoiledNpcs.Clear();
         IsOpcodeDetected = false;
         OpcodeXorKey = 0;
+        PartyLeaderObjectId = 0;
         LastEngagedTargetId = 0;
         LastSelfMoveEvidenceUtc = null;
         LastCombatProgressUtc = null;

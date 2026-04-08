@@ -209,10 +209,19 @@
                         <ComboBox ItemsSource="{Binding AvailableModes}" SelectedItem="{Binding Mode}" Width="180"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,4">
-                        <TextBlock Text="Leader Name:" VerticalAlignment="Center" Width="120"/>
-                        <TextBox Text="{Binding LeaderName}" Width="180"/>
-                        <TextBlock Text="Assist Name:" VerticalAlignment="Center" Margin="16,0,6,0"/>
-                        <TextBox Text="{Binding AssistName}" Width="180"/>
+                        <TextBlock Text="Leader:" VerticalAlignment="Center" Width="120"/>
+                        <ComboBox ItemsSource="{Binding AvailablePartyMembers}"
+                                  DisplayMemberPath="Display"
+                                  SelectedValuePath="SelectionKey"
+                                  SelectedValue="{Binding LeaderName}"
+                                  IsEnabled="{Binding IsLeaderSelectionEnabled}"
+                                  Width="220"/>
+                        <TextBlock Text="Assist:" VerticalAlignment="Center" Margin="16,0,6,0"/>
+                        <ComboBox ItemsSource="{Binding AvailablePartyMembers}"
+                                  DisplayMemberPath="Display"
+                                  SelectedValuePath="SelectionKey"
+                                  SelectedValue="{Binding AssistName}"
+                                  Width="220"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,4">
                         <TextBlock Text="Follow Distance:" VerticalAlignment="Center" Width="120"/>
@@ -240,6 +249,7 @@
                             <DataGridCheckBoxColumn Header="On" Binding="{Binding Enabled}" Width="40"/>
                             <DataGridTextColumn Header="Skill ID" Binding="{Binding SkillId}" Width="80"/>
                             <DataGridTextColumn Header="HP Threshold" Binding="{Binding HpThreshold}" Width="100"/>
+                            <DataGridTextColumn Header="MP Threshold" Binding="{Binding MpThreshold}" Width="100"/>
                             <DataGridTextColumn Header="Min MP%" Binding="{Binding MpMinPct}" Width="80"/>
                             <DataGridTextColumn Header="CD (ms)" Binding="{Binding CooldownMs}" Width="80"/>
                         </DataGrid.Columns>
@@ -350,4 +360,6 @@
         </TabControl>
     </DockPanel>
 </Window>
+
+
 

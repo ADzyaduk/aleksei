@@ -91,10 +91,8 @@ public sealed class PartyBuffTask : IBotTask
         }
     }
 
-    private static bool HasBuffEvidence(PartyMember target, GameWorld world)
-    {
-        return target.ObjectId == world.Me.ObjectId || target.Buffs.Count > 0;
-    }
+    private static bool HasBuffEvidence(PartyMember target, GameWorld world) =>
+        target.ObjectId == world.Me.ObjectId || target.Buffs.Count > 0;
 
     private static bool TryResolveTarget(BuffEntry rule, GameWorld world, PartyConfig party, out PartyMember target, out string targetLabel, out string reason)
     {
@@ -121,7 +119,9 @@ public sealed class PartyBuffTask : IBotTask
 
         if (mode == "leader")
         {
-            var leader = ResolveNamedMember(world, party.LeaderName) ?? ResolveLeaderByObjectId(world) ?? ResolveSoleMember(world);
+            var leader = PartyMemberResolver.ResolveConfiguredMember(world, party.LeaderName)
+                         ?? PartyMemberResolver.ResolveLeaderByObjectId(world)
+                         ?? PartyMemberResolver.ResolveSoleMember(world);
             if (leader != null)
             {
                 target = leader;
@@ -138,10 +138,10 @@ public sealed class PartyBuffTask : IBotTask
 
         if (mode == "assist")
         {
-            var assist = ResolveNamedMember(world, party.AssistName) ??
-                         ResolveNamedMember(world, party.LeaderName) ??
-                         ResolveLeaderByObjectId(world) ??
-                         ResolveSoleMember(world);
+            var assist = PartyMemberResolver.ResolveConfiguredMember(world, party.AssistName)
+                         ?? PartyMemberResolver.ResolveConfiguredMember(world, party.LeaderName)
+                         ?? PartyMemberResolver.ResolveLeaderByObjectId(world)
+                         ?? PartyMemberResolver.ResolveSoleMember(world);
             if (assist != null)
             {
                 target = assist;
@@ -158,14 +158,15 @@ public sealed class PartyBuffTask : IBotTask
 
         if (world.Party.Count == 1)
         {
-            var member = ResolveSoleMember(world)!;
+            var member = PartyMemberResolver.ResolveSoleMember(world)!;
             target = member;
             targetLabel = DescribeMember(member);
             reason = "ok";
             return true;
         }
 
-        var leaderFallback = ResolveNamedMember(world, party.LeaderName) ?? ResolveLeaderByObjectId(world);
+        var leaderFallback = PartyMemberResolver.ResolveConfiguredMember(world, party.LeaderName)
+                             ?? PartyMemberResolver.ResolveLeaderByObjectId(world);
         if (leaderFallback != null)
         {
             target = leaderFallback;
@@ -180,38 +181,7 @@ public sealed class PartyBuffTask : IBotTask
         return false;
     }
 
-    private static PartyMember? ResolveNamedMember(GameWorld world, string? name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            return null;
-
-        return world.Party.Values.FirstOrDefault(member =>
-                   string.Equals(member.Name, name, StringComparison.OrdinalIgnoreCase))
-               ?? world.Characters.Values.FirstOrDefault(member =>
-                   string.Equals(member.Name, name, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static PartyMember? ResolveLeaderByObjectId(GameWorld world)
-    {
-        if (world.PartyLeaderObjectId == 0)
-            return null;
-
-        return world.Party.TryGetValue(world.PartyLeaderObjectId, out var leader)
-            ? leader
-            : world.Characters.TryGetValue(world.PartyLeaderObjectId, out var knownLeader)
-                ? knownLeader
-                : null;
-    }
-
-    private static PartyMember? ResolveSoleMember(GameWorld world)
-    {
-        return world.Party.Count == 1 ? world.Party.Values.First() : null;
-    }
-
-    private static string DescribeMember(PartyMember member)
-    {
-        return string.IsNullOrWhiteSpace(member.Name) ? $"obj:{member.ObjectId}" : member.Name;
-    }
+    private static string DescribeMember(PartyMember member) => PartyMemberResolver.DescribeMember(member);
 
     private static TimeSpan GetMissingEffectRecastDelay(double intervalSec)
     {
@@ -244,3 +214,4 @@ public sealed class PartyBuffTask : IBotTask
         _collector?.RecordBehavior("PartyBuff", message);
     }
 }
+

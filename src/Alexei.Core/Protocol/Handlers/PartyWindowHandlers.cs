@@ -180,8 +180,7 @@ public sealed class PartySmallWindowUpdateHandler : IPacketHandler
 
         var r = new PacketReader(payload);
         int objectId = r.ReadInt32();
-        if (!world.Party.TryGetValue(objectId, out var member))
-            return false;
+        var member = world.Party.GetOrAdd(objectId, id => new PartyMember { ObjectId = id });
 
         _ = r.ReadInt32();
         _ = r.ReadInt32();
@@ -204,3 +203,4 @@ public sealed class PartySmallWindowUpdateHandler : IPacketHandler
         return true;
     }
 }
+

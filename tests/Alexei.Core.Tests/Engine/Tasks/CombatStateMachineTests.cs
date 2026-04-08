@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 using Alexei.Core.Config;
 using Alexei.Core.Crypto;
@@ -712,6 +712,40 @@ public sealed class CombatStateMachineTests
         await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
         Assert.Empty(harness.SentPackets);
     }
+    [Fact]
+    public async Task PartyHeal_CastsRecharge_WhenPartyMemberMpIsBelowThreshold()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Party.Enabled = true;
+        profile.Party.HealRules.Add(new HealRule
+        {
+            SkillId = 1013,
+            Level = 1,
+            HpThreshold = 0,
+            MpThreshold = 60,
+            MpMinPct = 20,
+            CooldownMs = 5000,
+            Enabled = true
+        });
+
+        world.Me.X = 0;
+        world.Me.Y = 0;
+        world.Me.Z = 0;
+        world.Me.CurMp = 80;
+        world.Me.MaxMp = 100;
+        world.Skills[1013] = new SkillInfo { SkillId = 1013, Level = 1 };
+        world.Party[1] = new PartyMember { ObjectId = 1, Name = "LowMp", CurHp = 100, MaxHp = 100, CurMp = 20, MaxMp = 100 };
+        world.Party[2] = new PartyMember { ObjectId = 2, Name = "FullMp", CurHp = 100, MaxHp = 100, CurMp = 90, MaxMp = 100 };
+
+        var task = new PartyHealTask();
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.TargetEnter);
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.RequestMagicSkillUse);
+    }
 
     private static CharacterProfile CreateBartzProfile() =>
         new()
@@ -799,3 +833,4 @@ public sealed class CombatStateMachineTests
         }
     }
 }
+

@@ -87,6 +87,31 @@ public sealed class PartyWindowHandlersTests
     }
 
     [Fact]
+    public void PartySmallWindowUpdateHandler_CreatesPlaceholderMember_FromCompactBartzPositionTail()
+    {
+        var world = new GameWorld();
+
+        var handler = new PartySmallWindowUpdateHandler();
+        handler.Handle(BuildIntPayload(
+            1_209_025_772,
+            1_236_294_729,
+            4_051,
+            20,
+            0,
+            0,
+            888,
+            177_792,
+            -3_632,
+            0), world);
+
+        Assert.True(world.Party.ContainsKey(1_209_025_772));
+        var member = world.Party[1_209_025_772];
+        Assert.Equal(888, member.X);
+        Assert.Equal(177_792, member.Y);
+        Assert.Equal(-3_632, member.Z);
+    }
+
+    [Fact]
     public void PartySmallWindowUpdateHandler_ParsesCompactBartzPositionTail()
     {
         var world = new GameWorld();
@@ -177,3 +202,4 @@ public sealed class PartyWindowHandlersTests
         return payload;
     }
 }
+

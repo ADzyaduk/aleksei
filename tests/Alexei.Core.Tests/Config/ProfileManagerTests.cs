@@ -1,4 +1,4 @@
-using Alexei.Core.Config;
+﻿using Alexei.Core.Config;
 using Xunit;
 
 namespace Alexei.Core.Tests.Config;
@@ -75,6 +75,7 @@ public sealed class ProfileManagerTests
             manager.Current.Party.FollowDistance = 175;
             manager.Current.Party.RepathDistance = 425;
             manager.Current.Party.PositionTimeoutMs = 2500;
+            manager.Current.Party.HealRules.Add(new HealRule { SkillId = 1013, HpThreshold = 0, MpThreshold = 55, MpMinPct = 10, CooldownMs = 1500, Enabled = true });
 
             manager.Save();
 
@@ -88,6 +89,8 @@ public sealed class ProfileManagerTests
             Assert.Equal(175, reloaded.Current.Party.FollowDistance);
             Assert.Equal(425, reloaded.Current.Party.RepathDistance);
             Assert.Equal(2500, reloaded.Current.Party.PositionTimeoutMs);
+            Assert.Single(reloaded.Current.Party.HealRules);
+            Assert.Equal(55, reloaded.Current.Party.HealRules[0].MpThreshold);
         }
         finally
         {
@@ -96,4 +99,5 @@ public sealed class ProfileManagerTests
         }
     }
 }
+
 

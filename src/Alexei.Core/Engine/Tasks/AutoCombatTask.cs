@@ -814,21 +814,31 @@ public sealed class AutoCombatTask : IBotTask
         SetPhase(world, CombatPhase.Idle, reason);
     }
 
-    private void ResetCombatState(GameWorld world, string reason)
+    internal void ResetRuntimeState(GameWorld world, string reason)
     {
         _retainedTargetId = 0;
         _postKillTargetId = 0;
         _pendingTargetId = 0;
+        _lastSweepTargetId = 0;
         _postKillCancelledTarget = false;
         _postKillSweepDone = false;
+        _openingSkillDone = false;
         _lootWindowEndsAt = DateTime.MinValue;
         _lootWindowEmptyPolls = 0;
+        _selectionOriginOverrideUntil = DateTime.MinValue;
+        _selectionOriginX = 0;
+        _selectionOriginY = 0;
+        _selectionOriginZ = 0;
         world.Me.TargetId = 0;
         world.Me.PendingTargetId = 0;
         Trace("target-cleared", $"reason={reason}");
         world.LastEngagedTargetId = 0;
-        ClearSelectionOriginOverride();
         SetPhase(world, CombatPhase.Idle, reason);
+    }
+
+    private void ResetCombatState(GameWorld world, string reason)
+    {
+        ResetRuntimeState(world, reason);
     }
 
     private bool HasSelectionOriginOverride() => DateTime.UtcNow <= _selectionOriginOverrideUntil;
@@ -926,3 +936,4 @@ public sealed class AutoCombatTask : IBotTask
         _logger?.LogInformation("[AutoCombat] {Message}", message);
     }
 }
+

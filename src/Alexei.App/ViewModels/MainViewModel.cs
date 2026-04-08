@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
@@ -122,7 +122,7 @@ public sealed class MainViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Polling-based UI update вЂ” reads world state directly, no events needed.
+    /// Polling-based UI update — reads world state directly, no events needed.
     /// Same pattern as Python bot's tab._update() with tkinter.after(400).
     /// </summary>
     private void PollWorldState()
@@ -137,6 +137,8 @@ public sealed class MainViewModel : ViewModelBase
 
         // Update monsters every other tick (less frequent)
         Monsters.UpdateFromWorld(_world);
+
+        Party.UpdatePartyMembers(_world.Party.Values, _world.PartyLeaderObjectId);
 
         // Push skill list to pickers when skills are available
         if (_world.Skills.Count > 0)
@@ -210,14 +212,14 @@ public sealed class MainViewModel : ViewModelBase
 
         // Bartz uses different base opcodes (XOR key 0x1A detected per-session).
         // Mapping: wire ^ 0x1A = base. Identified from unknown-packet logs.
-        //   0x0Bв†’0x11: UserInfo (with Title string)
-        //   0x11в†’0x0B: SkillList
-        //   0x18в†’0x02: target/NPC status update (HP/MP/CP pairs)
-        //   0x27в†’0x3D: target selected/state
-        //   0x2Fв†’0x35: MoveToPoint
-        //   0x62в†’0x78: ChangeWaitType
-        //   0x86в†’0x9C: StatusUpdate
-        //   0xB9в†’0xA3: target-related companion packet
+        //   0x0B→0x11: UserInfo (with Title string)
+        //   0x11→0x0B: SkillList
+        //   0x18→0x02: target/NPC status update (HP/MP/CP pairs)
+        //   0x27→0x3D: target selected/state
+        //   0x2F→0x35: MoveToPoint
+        //   0x62→0x78: ChangeWaitType
+        //   0x86→0x9C: StatusUpdate
+        //   0xB9→0xA3: target-related companion packet
         if (server.Id == "bartz")
         {
             dispatcher.Register(new BartZUserInfoHandler(), 0x11);
@@ -235,7 +237,7 @@ public sealed class MainViewModel : ViewModelBase
             dispatcher.PacketObserved += (observation, payload) => _packetCollector.Record(observation, payload);
         }
 
-        // Packet logging вЂ” unknown packets always shown (limited), known only when ShowPackets is on
+        // Packet logging — unknown packets always shown (limited), known only when ShowPackets is on
         int unknownUiCount = 0;
         dispatcher.PacketReceived += (opcode, payload, handler) =>
         {
@@ -286,14 +288,14 @@ public sealed class MainViewModel : ViewModelBase
         _gameProxy = new GameProxy(server, _serverConfig.ProxyGamePort, _world, dispatcher, collector: _packetCollector);
         _gameProxy.Log += msg => Application.Current?.Dispatcher.BeginInvoke(() => Log.Add("GAME", msg));
 
-        // Wire dynamic game server discovery: LoginProxy в†’ GameProxy
+        // Wire dynamic game server discovery: LoginProxy → GameProxy
         _loginProxy.GameServerDiscovered += (host, port) => _gameProxy.UpdateEndpoint(host, port);
 
         // Bot engine
         _botEngine = new BotEngine(_world, _profileManager, App.LoggerFactory.CreateLogger<BotEngine>(), _packetCollector);
         _gameLoop = new GameLoop(_botEngine);
 
-        // Wire sender from proxy session в†’ bot engine (fired when BlowfishInit received)
+        // Wire sender from proxy session → bot engine (fired when BlowfishInit received)
         _gameProxy.SenderReady += sender =>
         {
             _botEngine.SetSender(sender);
@@ -305,8 +307,8 @@ public sealed class MainViewModel : ViewModelBase
             Application.Current?.Dispatcher.BeginInvoke(() =>
             {
                 IsSenderReady = true;
-                StatusText = "Game ready вЂ” sender initialized";
-                Log.Add("INFO", "PacketSender ready вЂ” bot can start");
+                StatusText = "Game ready — sender initialized";
+                Log.Add("INFO", "PacketSender ready — bot can start");
             });
         };
 
@@ -335,7 +337,7 @@ public sealed class MainViewModel : ViewModelBase
         _ = _gameProxy.StartAsync(_proxyCts.Token);
 
         IsProxyRunning = true;
-        StatusText = $"Proxy running вЂ” {server.Name}";
+        StatusText = $"Proxy running — {server.Name}";
         Log.Add("INFO", $"Proxy started for {server.Name} ({server.LoginHost}:{server.LoginPort})");
     }
 
@@ -367,10 +369,11 @@ public sealed class MainViewModel : ViewModelBase
     private void StartBot()
     {
         if (_botEngine == null) return;
+        ApplyViewModelsToProfile(saveToDisk: false);
         _botEngine.Start();
         _gameLoop?.Start();
         IsBotRunning = true;
-        Log.Add("INFO", "Bot started");
+        Log.Add("INFO", $"Bot started (party={_profileManager.Current.Party.Mode}, enabled={_profileManager.Current.Party.Enabled}, leader={_profileManager.Current.Party.LeaderName}, assist={_profileManager.Current.Party.AssistName})");
     }
 
     private void StopBot()
@@ -404,13 +407,20 @@ public sealed class MainViewModel : ViewModelBase
 
     private void SaveProfile()
     {
+        ApplyViewModelsToProfile(saveToDisk: true);
+        Log.Add("INFO", "Profile saved");
+    }
+
+    private void ApplyViewModelsToProfile(bool saveToDisk)
+    {
         Combat.ApplyToProfile();
         Buffs.ApplyToProfile();
         Party.ApplyToProfile();
         Loot.ApplyToProfile();
         Recovery.ApplyToProfile();
-        _profileManager.Save();
-        Log.Add("INFO", "Profile saved");
+
+        if (saveToDisk)
+            _profileManager.Save();
     }
 
     private static ServerConfig CreateDefaultConfig(string path)

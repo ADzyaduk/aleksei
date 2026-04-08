@@ -1,4 +1,4 @@
-using Alexei.Core.Config;
+﻿using Alexei.Core.Config;
 using Alexei.Core.Diagnostics;
 using Alexei.Core.GameState;
 using Alexei.Core.Protocol;
@@ -28,6 +28,7 @@ public sealed class PartyHealTask : IBotTask
 
         PartyMember? target = null;
         HealRule? bestRule = null;
+        double bestPriority = double.MinValue;
 
         foreach (var member in world.Party.Values)
         {
@@ -37,7 +38,6 @@ public sealed class PartyHealTask : IBotTask
             foreach (var rule in profile.Party.HealRules)
             {
                 if (!rule.Enabled || rule.SkillId == 0) continue;
-                if (member.HpPct >= rule.HpThreshold) continue;
                 if (world.Me.MpPct < rule.MpMinPct) continue;
                 if (!world.Skills.TryGetValue(rule.SkillId, out var skillInfo)) continue;
                 if (!skillInfo.IsReady) continue;
@@ -47,11 +47,20 @@ public sealed class PartyHealTask : IBotTask
                     continue;
                 }
 
-                if (target == null || member.HpPct < target.HpPct)
-                {
-                    target = member;
-                    bestRule = rule;
-                }
+                bool hpTriggered = rule.HpThreshold > 0 && member.HpPct < rule.HpThreshold;
+                bool mpTriggered = rule.MpThreshold > 0 && member.MaxMp > 0 && member.MpPct < rule.MpThreshold;
+                if (!hpTriggered && !mpTriggered)
+                    continue;
+
+                double hpPriority = hpTriggered ? rule.HpThreshold - member.HpPct : double.MinValue;
+                double mpPriority = mpTriggered ? rule.MpThreshold - member.MpPct : double.MinValue;
+                double priority = Math.Max(hpPriority, mpPriority);
+                if (priority <= bestPriority)
+                    continue;
+
+                target = member;
+                bestRule = rule;
+                bestPriority = priority;
             }
         }
 
@@ -94,3 +103,4 @@ public sealed class PartyHealTask : IBotTask
         _collector?.RecordBehavior("PartyHeal", message);
     }
 }
+

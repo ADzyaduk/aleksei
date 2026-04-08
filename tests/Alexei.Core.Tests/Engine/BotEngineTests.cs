@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using Alexei.Core.Config;
 using Alexei.Core.Crypto;
 using Alexei.Core.Engine;
+using Alexei.Core.Engine.Tasks;
 using Alexei.Core.GameState;
 using Alexei.Core.Proxy;
 using Xunit;
@@ -77,6 +79,75 @@ public sealed class BotEngineTests
         Assert.Equal(400, world.Me.AnchorX);
         Assert.Equal(500, world.Me.AnchorY);
         Assert.Equal(600, world.Me.AnchorZ);
+    }
+
+    [Fact]
+    public void Start_ResetsAutoCombatRuntimeState_BeforeCapturingNewAnchor()
+    {
+        var world = new GameWorld();
+        var profileManager = new ProfileManager(Path.GetTempPath());
+        var engine = new BotEngine(world, profileManager);
+
+        world.Me.ObjectId = 1001;
+        world.Me.X = 111;
+        world.Me.Y = 222;
+        world.Me.Z = 333;
+        world.Me.TargetId = 777;
+        world.Me.PendingTargetId = 888;
+        world.LastEngagedTargetId = 999;
+
+        var autoCombat = GetAutoCombatTask(engine);
+        SetField(autoCombat, "_retainedTargetId", 41);
+        SetField(autoCombat, "_postKillTargetId", 42);
+        SetField(autoCombat, "_pendingTargetId", 43);
+        SetField(autoCombat, "_postKillCancelledTarget", true);
+        SetField(autoCombat, "_postKillSweepDone", true);
+        SetField(autoCombat, "_lootWindowEmptyPolls", 3);
+        SetField(autoCombat, "_selectionOriginX", 4444);
+        SetField(autoCombat, "_selectionOriginY", 5555);
+        SetField(autoCombat, "_selectionOriginZ", 6666);
+        SetField(autoCombat, "_selectionOriginOverrideUntil", DateTime.UtcNow.AddMinutes(1));
+
+        engine.Start();
+
+        Assert.Equal(0, GetField<int>(autoCombat, "_retainedTargetId"));
+        Assert.Equal(0, GetField<int>(autoCombat, "_postKillTargetId"));
+        Assert.Equal(0, GetField<int>(autoCombat, "_pendingTargetId"));
+        Assert.False(GetField<bool>(autoCombat, "_postKillCancelledTarget"));
+        Assert.False(GetField<bool>(autoCombat, "_postKillSweepDone"));
+        Assert.Equal(0, GetField<int>(autoCombat, "_lootWindowEmptyPolls"));
+        Assert.Equal(0, GetField<int>(autoCombat, "_selectionOriginX"));
+        Assert.Equal(0, GetField<int>(autoCombat, "_selectionOriginY"));
+        Assert.Equal(0, GetField<int>(autoCombat, "_selectionOriginZ"));
+        Assert.True(GetField<DateTime>(autoCombat, "_selectionOriginOverrideUntil") <= DateTime.UtcNow);
+        Assert.Equal(0, world.Me.TargetId);
+        Assert.Equal(0, world.Me.PendingTargetId);
+        Assert.Equal(0, world.LastEngagedTargetId);
+        Assert.Equal(111, world.Me.AnchorX);
+        Assert.Equal(222, world.Me.AnchorY);
+        Assert.Equal(333, world.Me.AnchorZ);
+    }
+
+    private static AutoCombatTask GetAutoCombatTask(BotEngine engine)
+    {
+        var tasksField = typeof(BotEngine).GetField("_tasks", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(tasksField);
+        var tasks = Assert.IsAssignableFrom<IEnumerable<object>>(tasksField!.GetValue(engine));
+        return Assert.IsType<AutoCombatTask>(tasks.Single(task => task is AutoCombatTask));
+    }
+
+    private static void SetField<T>(object target, string fieldName, T value)
+    {
+        var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        field!.SetValue(target, value);
+    }
+
+    private static T GetField<T>(object target, string fieldName)
+    {
+        var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        return Assert.IsType<T>(field!.GetValue(target));
     }
 
     private sealed class PacketSenderHarness : IAsyncDisposable

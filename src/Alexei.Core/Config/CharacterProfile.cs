@@ -81,6 +81,7 @@ public sealed class HealRule : NotifyBase
     private int _skillId; [JsonPropertyName("skillId")] public int SkillId { get => _skillId; set => SetField(ref _skillId, value); }
     private int _level = 1; [JsonPropertyName("level")] public int Level { get => _level; set => SetField(ref _level, value); }
     private double _hpThreshold = 70; [JsonPropertyName("hpThreshold")] public double HpThreshold { get => _hpThreshold; set => SetField(ref _hpThreshold, value); }
+    private double _mpThreshold; [JsonPropertyName("mpThreshold")] public double MpThreshold { get => _mpThreshold; set => SetField(ref _mpThreshold, value); }
     private double _mpMinPct = 20; [JsonPropertyName("mpMinPct")] public double MpMinPct { get => _mpMinPct; set => SetField(ref _mpMinPct, value); }
     private int _cooldownMs = 1500; [JsonPropertyName("cooldownMs")] public int CooldownMs { get => _cooldownMs; set => SetField(ref _cooldownMs, value); }
     private bool _enabled = true; [JsonPropertyName("enabled")] public bool Enabled { get => _enabled; set => SetField(ref _enabled, value); }
@@ -154,3 +155,4 @@ public sealed class CharacterProfile
         File.WriteAllText(path, JsonSerializer.Serialize(this, JsonOpts));
     }
 }
+

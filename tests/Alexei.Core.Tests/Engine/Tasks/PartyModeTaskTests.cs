@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 using Alexei.Core.Config;
 using Alexei.Core.Crypto;
@@ -47,6 +47,40 @@ public sealed class PartyModeTaskTests
         Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.MoveBackwardToLocation);
         Assert.DoesNotContain(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.TargetEnter);
         Assert.DoesNotContain(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.RequestActionAttack);
+    }
+    [Fact]
+    public async Task FollowMode_Moves_WhenLeaderIsOutsideFollowDistance_ButInsideRepathDistance()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Party.Enabled = true;
+        profile.Party.Mode = PartyMode.Follow;
+        profile.Party.LeaderName = "Leader";
+        profile.Party.FollowDistance = 150;
+        profile.Party.RepathDistance = 300;
+        profile.Party.PositionTimeoutMs = 2_000;
+
+        world.PositionConfidence = PositionConfidence.Low;
+        world.Me.X = 0;
+        world.Me.Y = 0;
+        world.Me.Z = 0;
+        world.Party[100] = new PartyMember
+        {
+            ObjectId = 100,
+            Name = "Leader",
+            X = 220,
+            Y = 0,
+            Z = 0,
+            LastUpdateUtc = DateTime.UtcNow,
+            LastPositionUpdateUtc = DateTime.UtcNow
+        };
+
+        var task = new PartyModeTask();
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.MoveBackwardToLocation);
     }
 
     [Fact]
@@ -99,8 +133,8 @@ public sealed class PartyModeTaskTests
             X = 600,
             Y = 0,
             Z = 0,
-            LastUpdateUtc = DateTime.UtcNow.AddSeconds(-5),
-            LastPositionUpdateUtc = DateTime.UtcNow.AddSeconds(-5)
+            LastUpdateUtc = DateTime.UtcNow.AddSeconds(-15),
+            LastPositionUpdateUtc = DateTime.UtcNow.AddSeconds(-15)
         };
 
         var task = new PartyModeTask();
@@ -108,6 +142,40 @@ public sealed class PartyModeTaskTests
         await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
 
         Assert.Empty(harness.SentPackets);
+    }
+    [Fact]
+    public async Task FollowMode_UsesRecentLastKnownPosition_WhenUpdateIsSlightlyStale()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Party.Enabled = true;
+        profile.Party.Mode = PartyMode.Follow;
+        profile.Party.LeaderName = "Leader";
+        profile.Party.FollowDistance = 150;
+        profile.Party.RepathDistance = 300;
+        profile.Party.PositionTimeoutMs = 2_000;
+
+        world.PositionConfidence = PositionConfidence.Low;
+        world.Me.X = 0;
+        world.Me.Y = 0;
+        world.Me.Z = 0;
+        world.Party[100] = new PartyMember
+        {
+            ObjectId = 100,
+            Name = "Leader",
+            X = 260,
+            Y = 0,
+            Z = 0,
+            LastUpdateUtc = DateTime.UtcNow.AddSeconds(-3),
+            LastPositionUpdateUtc = DateTime.UtcNow.AddSeconds(-3)
+        };
+
+        var task = new PartyModeTask();
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.MoveBackwardToLocation);
     }
 
     [Fact]
@@ -144,6 +212,54 @@ public sealed class PartyModeTaskTests
         await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
 
         Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.MoveBackwardToLocation);
+    }
+
+
+    [Fact]
+    public async Task FollowMode_UsesConfiguredLeaderSelection_WhenPresent()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Party.Enabled = true;
+        profile.Party.Mode = PartyMode.Follow;
+        profile.Party.LeaderName = "ChosenLeader";
+        profile.Party.FollowDistance = 150;
+        profile.Party.RepathDistance = 300;
+        profile.Party.PositionTimeoutMs = 2_000;
+
+        world.PositionConfidence = PositionConfidence.Low;
+        world.Me.X = 0;
+        world.Me.Y = 0;
+        world.Me.Z = 0;
+        world.PartyLeaderObjectId = 100;
+        world.Party[100] = new PartyMember
+        {
+            ObjectId = 100,
+            Name = "ActualLeader",
+            X = 600,
+            Y = 0,
+            Z = 0,
+            LastUpdateUtc = DateTime.UtcNow,
+            LastPositionUpdateUtc = DateTime.UtcNow
+        };
+        world.Party[200] = new PartyMember
+        {
+            ObjectId = 200,
+            Name = "ChosenLeader",
+            X = 600,
+            Y = 0,
+            Z = 0,
+            LastUpdateUtc = DateTime.UtcNow,
+            LastPositionUpdateUtc = DateTime.UtcNow
+        };
+
+        var task = new PartyModeTask();
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.MoveBackwardToLocation);
+        Assert.Equal(0, world.Me.TargetId);
     }
 
     [Fact]
@@ -264,6 +380,56 @@ public sealed class PartyModeTaskTests
     }
 
     [Fact]
+    public async Task AssistMode_FallsBackToPartyLeaderObjectId_WhenNamesDoNotResolve()
+    {
+        await using var harness = await PacketSenderHarness.CreateAsync();
+        var world = new GameWorld();
+        var profile = CreateBartzProfile();
+        profile.Party.Enabled = true;
+        profile.Party.Mode = PartyMode.Assist;
+        profile.Party.LeaderName = "GhostLeader";
+        profile.Party.AssistName = "GhostAssist";
+        profile.Party.FollowDistance = 150;
+        profile.Party.RepathDistance = 300;
+        profile.Party.PositionTimeoutMs = 2_000;
+
+        world.PositionConfidence = PositionConfidence.Low;
+        world.Me.X = 0;
+        world.Me.Y = 0;
+        world.Me.Z = 0;
+        world.PartyLeaderObjectId = 100;
+        world.Party[100] = new PartyMember
+        {
+            ObjectId = 100,
+            Name = "ActualLeader",
+            X = 120,
+            Y = 0,
+            Z = 0,
+            TargetId = 500,
+            LastUpdateUtc = DateTime.UtcNow,
+            LastPositionUpdateUtc = DateTime.UtcNow
+        };
+        world.Npcs[500] = new Npc
+        {
+            ObjectId = 500,
+            NpcTypeId = 1_000_500,
+            X = 130,
+            Y = 0,
+            Z = 0,
+            IsAttackable = true,
+            CurHp = 100,
+            MaxHp = 100
+        };
+
+        var task = new PartyModeTask();
+
+        await task.ExecuteAsync(world, harness.Sender, profile, CancellationToken.None);
+
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.TargetEnter);
+        Assert.Contains(harness.SentPackets, packet => packet.Opcode == Opcodes.GameC2S.RequestActionAttack);
+    }
+
+    [Fact]
     public async Task AutoCombat_DoesNotSelectOwnTarget_WhenPartyModeIsActive()
     {
         await using var harness = await PacketSenderHarness.CreateAsync();
@@ -363,3 +529,6 @@ public sealed class PartyModeTaskTests
         }
     }
 }
+
+
+

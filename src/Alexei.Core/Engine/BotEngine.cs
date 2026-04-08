@@ -13,6 +13,7 @@ public sealed class BotEngine
     private readonly ProfileManager _profileManager;
     private readonly ILogger? _logger;
     private readonly List<IBotTask> _tasks = new();
+    private readonly AutoCombatTask _autoCombatTask;
     private PacketSender? _sender;
     private DateTime _anchorRefreshArmedAt = DateTime.MinValue;
 
@@ -26,6 +27,7 @@ public sealed class BotEngine
         _world = world;
         _profileManager = profileManager;
         _logger = logger;
+        _autoCombatTask = new AutoCombatTask(logger, collector);
 
         _tasks.Add(new RecoveryTask());
         _tasks.Add(new AnchorTask());
@@ -34,7 +36,7 @@ public sealed class BotEngine
         _tasks.Add(new AutoHealTask());
         _tasks.Add(new PartyBuffTask(collector));
         _tasks.Add(new PartyModeTask(collector));
-        _tasks.Add(new AutoCombatTask(logger, collector));
+        _tasks.Add(_autoCombatTask);
         _tasks.Add(new AutoLootTask(collector));
     }
 
@@ -42,6 +44,8 @@ public sealed class BotEngine
 
     public void Start()
     {
+        _autoCombatTask.ResetRuntimeState(_world, "bot start");
+
         if (_world.Me.ObjectId != 0)
         {
             _world.Me.AnchorX = _world.Me.X;
@@ -58,6 +62,7 @@ public sealed class BotEngine
             _world.Me.AnchorZ = 0;
             _anchorRefreshArmedAt = DateTime.MinValue;
         }
+
         IsRunning = true;
         SetPhase("Running");
     }
@@ -66,6 +71,7 @@ public sealed class BotEngine
     {
         IsRunning = false;
         _anchorRefreshArmedAt = DateTime.MinValue;
+        _autoCombatTask.ResetRuntimeState(_world, "bot stop");
         _world.Me.AnchorSet = false;
         _world.Me.AnchorX = 0;
         _world.Me.AnchorY = 0;

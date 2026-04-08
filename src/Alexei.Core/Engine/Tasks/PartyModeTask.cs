@@ -1,4 +1,4 @@
-using Alexei.Core.Config;
+﻿using Alexei.Core.Config;
 using Alexei.Core.Diagnostics;
 using Alexei.Core.GameState;
 using Alexei.Core.Protocol;
@@ -36,27 +36,38 @@ public sealed class PartyModeTask : IBotTask
         var actor = ResolveActor(world, party, _lastResolvedActorId);
         if (actor == null)
         {
-            Trace($"actor-unresolved:{party.Mode}", $"skip mode={party.Mode} reason=actor-unresolved leader={party.LeaderName} assist={party.AssistName}");
+            Trace(
+                $"actor-unresolved:{party.Mode}",
+                $"skip mode={party.Mode} reason=actor-unresolved leader={party.LeaderName} assist={party.AssistName} partyLeaderId={world.PartyLeaderObjectId} members={world.Party.Count}");
             return;
         }
 
         _lastResolvedActorId = actor.ObjectId;
 
-        if (!IsFresh(actor, party.PositionTimeoutMs))
+        bool isFresh = IsFresh(actor, party.PositionTimeoutMs);
+        if (!isFresh)
         {
-            Trace($"actor-stale:{actor.ObjectId}", $"skip mode={party.Mode} actor={DescribeActor(actor)} reason=stale-position");
-            return;
+            if (party.Mode == PartyMode.Follow && IsFollowPositionUsable(actor, party.PositionTimeoutMs))
+            {
+                Trace($"actor-stale-soft:{actor.ObjectId}", $"follow mode using last-known-position actor={DescribeActor(actor)} timeoutMs={party.PositionTimeoutMs}");
+            }
+            else
+            {
+                Trace($"actor-stale:{actor.ObjectId}", $"skip mode={party.Mode} actor={DescribeActor(actor)} reason=stale-position");
+                return;
+            }
         }
 
         double distance = actor.DistanceTo(world.Me.X, world.Me.Y, world.Me.Z);
-        if (distance > Math.Max(0, party.RepathDistance))
+        double followDistance = Math.Max(0, party.FollowDistance);
+        if (distance > followDistance)
         {
             await FollowActorAsync(actor, world, sender, party, ct);
-            Trace($"move:{actor.ObjectId}", $"move actor={DescribeActor(actor)} distance={distance:F1}");
+            Trace($"move:{actor.ObjectId}", $"move actor={DescribeActor(actor)} distance={distance:F1} follow={followDistance:F1} repath={party.RepathDistance:F1}");
         }
         else
         {
-            Trace($"hold:{actor.ObjectId}", $"hold actor={DescribeActor(actor)} distance={distance:F1} repath={party.RepathDistance:F1}");
+            Trace($"hold:{actor.ObjectId}", $"hold actor={DescribeActor(actor)} distance={distance:F1} follow={followDistance:F1} repath={party.RepathDistance:F1}");
         }
 
         if (party.Mode != PartyMode.Assist)
@@ -87,45 +98,26 @@ public sealed class PartyModeTask : IBotTask
 
     private static PartyMember? ResolveActor(GameWorld world, PartyConfig party, int lastResolvedActorId)
     {
-        string actorName = party.Mode == PartyMode.Assist && !string.IsNullOrWhiteSpace(party.AssistName)
-            ? party.AssistName
-            : party.LeaderName;
-
-        PartyMember? byName = ResolveByName(world, actorName);
-
-        if (byName != null)
-            return byName;
-
-        if (party.Mode == PartyMode.Follow || string.IsNullOrWhiteSpace(party.AssistName))
+        if (party.Mode == PartyMode.Follow)
         {
-            if (TryGetKnownActorById(world, world.PartyLeaderObjectId, out var leaderById))
-                return leaderById;
+            return PartyMemberResolver.ResolveConfiguredMember(world, party.LeaderName)
+                   ?? PartyMemberResolver.ResolveLeaderByObjectId(world)
+                   ?? ResolveLastResolved(world, lastResolvedActorId)
+                   ?? PartyMemberResolver.ResolveSoleMember(world);
         }
 
-        if (TryGetKnownActorById(world, lastResolvedActorId, out var lastResolved))
-            return lastResolved;
-
-        return world.Party.Count == 1 ? world.Party.Values.First() : null;
+        return PartyMemberResolver.ResolveConfiguredMember(world, party.AssistName)
+               ?? PartyMemberResolver.ResolveConfiguredMember(world, party.LeaderName)
+               ?? PartyMemberResolver.ResolveLeaderByObjectId(world)
+               ?? ResolveLastResolved(world, lastResolvedActorId)
+               ?? PartyMemberResolver.ResolveSoleMember(world);
     }
 
-    private static PartyMember? ResolveByName(GameWorld world, string? name)
+    private static PartyMember? ResolveLastResolved(GameWorld world, int lastResolvedActorId)
     {
-        if (string.IsNullOrWhiteSpace(name))
-            return null;
-
-        return world.Party.Values.FirstOrDefault(member =>
-                   string.Equals(member.Name, name, StringComparison.OrdinalIgnoreCase))
-               ?? world.Characters.Values.FirstOrDefault(member =>
-                   string.Equals(member.Name, name, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static bool TryGetKnownActorById(GameWorld world, int objectId, out PartyMember actor)
-    {
-        actor = default!;
-        if (objectId == 0)
-            return false;
-
-        return world.Party.TryGetValue(objectId, out actor) || world.Characters.TryGetValue(objectId, out actor);
+        return PartyMemberResolver.TryGetKnownActorById(world, lastResolvedActorId, out var lastResolved)
+            ? lastResolved
+            : null;
     }
 
     private static bool IsSelfPositionKnown(GameWorld world)
@@ -142,6 +134,15 @@ public sealed class PartyModeTask : IBotTask
             return false;
 
         int effectiveTimeoutMs = timeoutMs > 0 ? timeoutMs : 2000;
+        return DateTime.UtcNow <= member.LastPositionUpdateUtc.AddMilliseconds(effectiveTimeoutMs);
+    }
+
+    private static bool IsFollowPositionUsable(PartyMember member, int timeoutMs)
+    {
+        if (member.LastPositionUpdateUtc == DateTime.MinValue)
+            return false;
+
+        int effectiveTimeoutMs = Math.Max(timeoutMs > 0 ? timeoutMs : 2000, 10000);
         return DateTime.UtcNow <= member.LastPositionUpdateUtc.AddMilliseconds(effectiveTimeoutMs);
     }
 
@@ -162,12 +163,7 @@ public sealed class PartyModeTask : IBotTask
         await sender.SendAsync(GamePackets.Move(destX, destY, destZ, world.Me.X, world.Me.Y, world.Me.Z), ct);
     }
 
-    private static string DescribeActor(PartyMember actor)
-    {
-        return string.IsNullOrWhiteSpace(actor.Name)
-            ? $"obj:{actor.ObjectId}"
-            : $"{actor.Name}#{actor.ObjectId}";
-    }
+    private static string DescribeActor(PartyMember actor) => PartyMemberResolver.DescribeMember(actor);
 
     private void Trace(string key, string message)
     {
@@ -180,3 +176,6 @@ public sealed class PartyModeTask : IBotTask
         _collector?.RecordBehavior("PartyMode", message);
     }
 }
+
+
+

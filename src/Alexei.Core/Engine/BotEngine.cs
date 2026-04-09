@@ -105,7 +105,8 @@ public sealed class BotEngine
             if (!task.IsEnabled) continue;
             try
             {
-                await task.ExecuteAsync(_world, _sender, profile, ct);
+                bool consumed = await task.ExecuteAsync(_world, _sender, profile, ct);
+                if (consumed) break;
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)

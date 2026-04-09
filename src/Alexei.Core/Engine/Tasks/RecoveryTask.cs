@@ -17,15 +17,15 @@ public sealed class RecoveryTask : IBotTask
         _lastAction = DateTime.MinValue;
     }
 
-    public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
+    public async Task<bool> ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         if (DateTime.UtcNow < world.ActionLockUntilUtc)
-            return;
+            return false;
 
         var recovery = profile.Recovery;
-        if (!recovery.Enabled) return;
-        if (world.Me.IsDead) return;
-        if (DateTime.UtcNow < _lastAction.AddSeconds(2)) return;
+        if (!recovery.Enabled) return false;
+        if (world.Me.IsDead) return false;
+        if (DateTime.UtcNow < _lastAction.AddSeconds(2)) return false;
 
         bool needSit = (world.Me.HpPct < recovery.SitBelowHpPct || world.Me.MpPct < recovery.SitBelowMpPct);
         bool canStand = (world.Me.HpPct >= recovery.StandAboveHpPct && world.Me.MpPct >= recovery.StandAboveMpPct);
@@ -47,12 +47,18 @@ public sealed class RecoveryTask : IBotTask
             {
                 await sender.SendAsync(GamePackets.ActionUse(0)); // sit/stand toggle
                 _lastAction = DateTime.UtcNow;
+                world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(500);
+                return true;
             }
         }
         else if (world.Me.IsSitting && canStand)
         {
             await sender.SendAsync(GamePackets.ActionUse(0)); // stand up
             _lastAction = DateTime.UtcNow;
+            world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(500);
+            return true;
         }
+
+        return false;
     }
 }

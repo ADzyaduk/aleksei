@@ -30,10 +30,11 @@ public sealed class AutoBuffTask : IBotTask
         _lastTraceUtc = DateTime.MinValue;
     }
 
-    public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
+    public async Task<bool> ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
-        if (!profile.Buffs.Enabled) return;
-        if (world.Me.IsDead) return;
+        if (!profile.Buffs.Enabled) return false;
+        if (world.Me.IsDead) return false;
+        if (DateTime.UtcNow < world.ActionLockUntilUtc) return false;
         var now = DateTime.UtcNow;
 
         foreach (var buff in profile.Buffs.List)
@@ -65,18 +66,25 @@ public sealed class AutoBuffTask : IBotTask
 
             if (buff.Target == "self")
             {
-                await sender.SendAsync(GamePackets.CancelTarget(), ct);
-                await Task.Delay(100, ct);
+                if (world.Me.TargetId != 0)
+                {
+                    await sender.SendAsync(GamePackets.CancelTarget(), ct);
+                    world.Me.TargetId = 0;
+                    world.Me.PendingTargetId = 0;
+                    world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(150);
+                    return true;
+                }
             }
 
             var pkt = BuildSkillPacket(buff.SkillId, profile.Combat.CombatSkillPacket);
             await sender.SendAsync(pkt, ct);
-            _lastCast[buff.SkillId] = now;
-            world.ActionLockUntilUtc = now.AddMilliseconds(2000);
+            _lastCast[buff.SkillId] = DateTime.UtcNow;
+            world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(1500);
             Trace($"cast:{buff.SkillId}", $"cast skill={buff.SkillId} target={buff.Target}");
-            await Task.Delay(200, ct);
-            return;
+            return true;
         }
+
+        return false;
     }
 
     private static TimeSpan GetMissingEffectRecastDelay(double intervalSec)

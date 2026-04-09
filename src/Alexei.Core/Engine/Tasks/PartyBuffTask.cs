@@ -30,10 +30,11 @@ public sealed class PartyBuffTask : IBotTask
         _lastTraceUtc = DateTime.MinValue;
     }
 
-    public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
+    public async Task<bool> ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         if (!profile.Party.Enabled || world.Me.IsDead)
-            return;
+            return false;
+        if (DateTime.UtcNow < world.ActionLockUntilUtc) return false;
 
         var now = DateTime.UtcNow;
         foreach (var rule in profile.Party.BuffRules)
@@ -75,28 +76,39 @@ public sealed class PartyBuffTask : IBotTask
 
             if (target.ObjectId == world.Me.ObjectId || string.Equals(rule.Target, "self", StringComparison.OrdinalIgnoreCase))
             {
-                await sender.SendAsync(GamePackets.CancelTarget(), ct);
-                await Task.Delay(100, ct);
+                if (world.Me.TargetId != 0)
+                {
+                    await sender.SendAsync(GamePackets.CancelTarget(), ct);
+                    world.Me.TargetId = 0;
+                    world.Me.PendingTargetId = 0;
+                    world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(150);
+                    return true;
+                }
             }
             else
             {
-                var targetPacket = profile.Combat.UseTargetEnter
-                    ? GamePackets.TargetEnter(target.ObjectId, world.Me.X, world.Me.Y, world.Me.Z)
-                    : GamePackets.Action(target.ObjectId, world.Me.X, world.Me.Y, world.Me.Z, 1);
+                if (world.Me.TargetId != target.ObjectId)
+                {
+                    var targetPacket = profile.Combat.UseTargetEnter
+                        ? GamePackets.TargetEnter(target.ObjectId, world.Me.X, world.Me.Y, world.Me.Z)
+                        : GamePackets.Action(target.ObjectId, world.Me.X, world.Me.Y, world.Me.Z, 1);
 
-                await sender.SendAsync(targetPacket, ct);
-                await Task.Delay(150, ct);
-                world.Me.TargetId = target.ObjectId;
-                world.Me.PendingTargetId = 0;
+                    await sender.SendAsync(targetPacket, ct);
+                    world.Me.TargetId = target.ObjectId;
+                    world.Me.PendingTargetId = 0;
+                    world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(200);
+                    return true;
+                }
             }
 
             await sender.SendAsync(BuildSkillPacket(rule.SkillId, profile.Combat.CombatSkillPacket), ct);
-            _lastCast[key] = now;
-            world.ActionLockUntilUtc = now.AddMilliseconds(2000);
+            _lastCast[key] = DateTime.UtcNow;
+            world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(1500);
             Trace($"cast:{rule.SkillId}:{target.ObjectId}", $"cast skill={rule.SkillId} target={targetLabel}");
-            await Task.Delay(200, ct);
-            return;
+            return true;
         }
+
+        return false;
     }
 
     private static bool HasBuffEvidence(PartyMember target, GameWorld world) =>

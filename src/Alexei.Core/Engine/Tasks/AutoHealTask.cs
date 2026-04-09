@@ -17,10 +17,11 @@ public sealed class AutoHealTask : IBotTask
         _lastHealBySkill.Clear();
     }
 
-    public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
+    public async Task<bool> ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
-        if (!profile.Party.Enabled) return; // heal rules are in party config
-        if (world.Me.IsDead) return;
+        if (!profile.Party.Enabled) return false; // heal rules are in party config
+        if (world.Me.IsDead) return false;
+        if (DateTime.UtcNow < world.ActionLockUntilUtc) return false;
 
         // Self-heal: check party heal rules that target self
         foreach (var rule in profile.Party.HealRules)
@@ -40,9 +41,11 @@ public sealed class AutoHealTask : IBotTask
             var pkt = BuildSkillPacket(rule.SkillId, profile.Combat.CombatSkillPacket);
             await sender.SendAsync(pkt);
             _lastHealBySkill[rule.SkillId] = DateTime.UtcNow;
-            world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(2000);
-            return;
+            world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(1500);
+            return true;
         }
+        
+        return false;
     }
 
     private static (byte opcode, byte[] payload) BuildSkillPacket(int skillId, string? packetType) =>

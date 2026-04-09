@@ -28,10 +28,11 @@ public sealed class PartyHealTask : IBotTask
         _lastTraceUtc = DateTime.MinValue;
     }
 
-    public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
+    public async Task<bool> ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
-        if (!profile.Party.Enabled) return;
-        if (world.Me.IsDead || world.Party.IsEmpty) return;
+        if (!profile.Party.Enabled) return false;
+        if (world.Me.IsDead || world.Party.IsEmpty) return false;
+        if (DateTime.UtcNow < world.ActionLockUntilUtc) return false;
 
         PartyMember? target = null;
         HealRule? bestRule = null;
@@ -74,21 +75,28 @@ public sealed class PartyHealTask : IBotTask
         if (target == null || bestRule == null)
         {
             Trace("no-eligible-target", "skip reason=no-eligible-target");
-            return;
+            return false;
         }
 
-        var targetPacket = profile.Combat.UseTargetEnter
-            ? GamePackets.TargetEnter(target.ObjectId, world.Me.X, world.Me.Y, world.Me.Z)
-            : GamePackets.Action(target.ObjectId, world.Me.X, world.Me.Y, world.Me.Z, 1);
+        if (world.Me.TargetId != target.ObjectId)
+        {
+            var targetPacket = profile.Combat.UseTargetEnter
+                ? GamePackets.TargetEnter(target.ObjectId, world.Me.X, world.Me.Y, world.Me.Z)
+                : GamePackets.Action(target.ObjectId, world.Me.X, world.Me.Y, world.Me.Z, 1);
 
-        await sender.SendAsync(targetPacket, ct);
-        await Task.Delay(150, ct);
+            await sender.SendAsync(targetPacket, ct);
+            world.Me.TargetId = target.ObjectId;
+            world.Me.PendingTargetId = 0;
+            world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(200);
+            return true;
+        }
 
         var pkt = BuildSkillPacket(bestRule.SkillId, profile.Combat.CombatSkillPacket);
         await sender.SendAsync(pkt, ct);
         _lastHealBySkill[bestRule.SkillId] = DateTime.UtcNow;
-        world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(2000);
+        world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(1500);
         Trace($"cast:{bestRule.SkillId}:{target.ObjectId}", $"cast skill={bestRule.SkillId} target={target.ObjectId} hpPct={target.HpPct:F1}");
+        return true;
     }
 
     private static (byte opcode, byte[] payload) BuildSkillPacket(int skillId, string? packetType) =>

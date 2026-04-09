@@ -51,10 +51,10 @@ public sealed class AutoCombatTask : IBotTask
         _collector = collector;
     }
 
-    public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
+    public async Task<bool> ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         if (DateTime.UtcNow < world.ActionLockUntilUtc)
-            return;
+            return false;
 
         var combat = profile.Combat;
         var me = world.Me;
@@ -62,26 +62,26 @@ public sealed class AutoCombatTask : IBotTask
         if (!combat.Enabled)
         {
             ResetCombatState(world, "combat disabled");
-            return;
+            return false;
         }
 
         if (profile.Party.Enabled && profile.Party.Mode != PartyMode.None)
         {
             if (_phase != CombatPhase.Idle || world.CurrentCombatPhase != CombatPhase.Idle || world.Me.TargetId != 0 || world.Me.PendingTargetId != 0)
                 ResetCombatState(world, "party mode active");
-            return;
+            return false;
         }
 
         if (me.IsDead)
         {
             SetPhase(world, CombatPhase.Recovering, "me dead");
-            return;
+            return false;
         }
 
         if (me.IsSitting)
         {
             SetPhase(world, CombatPhase.Recovering, "me sitting");
-            return;
+            return false;
         }
 
         if (_phase == CombatPhase.Recovering)
@@ -95,33 +95,26 @@ public sealed class AutoCombatTask : IBotTask
         switch (_phase)
         {
             case CombatPhase.Idle:
-                await HandleIdleAsync(world, sender, profile, ct);
-                return;
+                return await HandleIdleAsync(world, sender, profile, ct);
             case CombatPhase.SelectingTarget:
-                await HandleSelectingTargetAsync(world, sender, profile, ct);
-                return;
+                return await HandleSelectingTargetAsync(world, sender, profile, ct);
             case CombatPhase.Opening:
-                await HandleOpeningAsync(world, sender, profile, ct);
-                return;
+                return await HandleOpeningAsync(world, sender, profile, ct);
             case CombatPhase.Engaging:
-                await HandleEngagingAsync(world, sender, profile, ct);
-                return;
+                return await HandleEngagingAsync(world, sender, profile, ct);
             case CombatPhase.KillLoop:
-                await HandleKillLoopAsync(world, sender, profile, ct);
-                return;
+                return await HandleKillLoopAsync(world, sender, profile, ct);
             case CombatPhase.PostKill:
-                await HandlePostKillAsync(world, sender, profile, ct);
-                return;
+                return await HandlePostKillAsync(world, sender, profile, ct);
             case CombatPhase.Looting:
-                await HandleLootingAsync(world, sender, profile, ct);
-                return;
+                return await HandleLootingAsync(world, sender, profile, ct);
             default:
                 SetPhase(world, CombatPhase.Idle, "fallback");
-                return;
+                return false;
         }
     }
 
-    private async Task HandleIdleAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
+    private async Task<bool> HandleIdleAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         var combat = profile.Combat;
         var me = world.Me;
@@ -133,7 +126,7 @@ public sealed class AutoCombatTask : IBotTask
             int attackable = world.Npcs.Values.Count(n => n.IsAttackable && !n.IsDead);
             Debug($"no target picked totalNpcs={total} attackableAlive={attackable} me=({me.X},{me.Y},{me.Z}) reasons={DescribeNoTarget(world, combat)}");
             world.LastEngagedTargetId = 0;
-            return;
+            return false;
         }
 
         if (!me.AnchorSet)
@@ -157,16 +150,18 @@ public sealed class AutoCombatTask : IBotTask
         ClearSelectionOriginOverride();
         await sender.SendAsync(BuildTargetPacket(target, combat, world), ct);
         SetPhase(world, CombatPhase.SelectingTarget, $"select target={target.ObjectId}");
+        world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(200);
+        return true;
     }
 
-    private async Task HandleSelectingTargetAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
+    private async Task<bool> HandleSelectingTargetAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         var combat = profile.Combat;
         var me = world.Me;
         if (!world.Npcs.TryGetValue(_retainedTargetId, out var target) || !IsValidTarget(world, _retainedTargetId, combat))
         {
             ResetCombatState(world, "target invalid during selection");
-            return;
+            return false;
         }
 
         if (me.TargetId == _retainedTargetId)
@@ -174,7 +169,7 @@ public sealed class AutoCombatTask : IBotTask
             me.PendingTargetId = 0;
             _pendingTargetId = 0;
             SetPhase(world, CombatPhase.Opening, $"target confirmed={_retainedTargetId}");
-            return;
+            return false;
         }
 
         if (DateTime.UtcNow > _lastTargetAction.AddSeconds(1))
@@ -183,7 +178,7 @@ public sealed class AutoCombatTask : IBotTask
             _lastTargetAction = DateTime.UtcNow;
             me.PendingTargetId = _retainedTargetId;
             await sender.SendAsync(BuildTargetPacket(target, combat, world), ct);
-            return;
+            return false;
         }
 
         if (DateTime.UtcNow >= _phaseSince.AddMilliseconds(300))
@@ -193,40 +188,42 @@ public sealed class AutoCombatTask : IBotTask
             _pendingTargetId = 0;
             SetPhase(world, CombatPhase.Opening, $"selection timeout adopt target={_retainedTargetId}");
         }
+        return false;
     }
 
-    private async Task HandleOpeningAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
+    private async Task<bool> HandleOpeningAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         var combat = profile.Combat;
         if (!IsValidTarget(world, _retainedTargetId, combat))
         {
             ResetCombatState(world, "opening target invalid");
-            return;
+            return false;
         }
 
         if (await TrySweepCorpseAsync(world, sender, profile, ct))
-            return;
+            return false;
 
         if (await TrySpoilAsync(world, sender, profile, ct))
-            return;
+            return false;
 
         if (!_openingSkillDone && await TryCastSkillAsync(world, sender, profile, openingOnly: true, ct))
         {
             _openingSkillDone = true;
-            return;
+            return false;
         }
 
         _openingSkillDone = true;
         SetPhase(world, CombatPhase.Engaging, $"opening done target={_retainedTargetId}");
+        return false;
     }
 
-    private async Task HandleEngagingAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
+    private async Task<bool> HandleEngagingAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         var combat = profile.Combat;
         if (!world.Npcs.TryGetValue(_retainedTargetId, out var target) || !IsValidTarget(world, _retainedTargetId, combat))
         {
             ResetCombatState(world, "engage target invalid");
-            return;
+            return false;
         }
 
         if (world.Me.TargetId != _retainedTargetId)
@@ -234,27 +231,28 @@ public sealed class AutoCombatTask : IBotTask
             world.Me.TargetId = _retainedTargetId;
             await sender.SendAsync(BuildTargetPacket(target, combat, world), ct);
             _lastTargetAction = DateTime.UtcNow;
-            return;
+            return false;
         }
 
         await SendAttackAsync(target, combat, sender, world, ct);
         _lastReattack = DateTime.UtcNow;
         SetPhase(world, CombatPhase.KillLoop, $"engage sent target={_retainedTargetId}");
+        return true;
     }
 
-    private async Task HandleKillLoopAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
+    private async Task<bool> HandleKillLoopAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         var combat = profile.Combat;
         if (IsTargetEliminated(world, _retainedTargetId))
         {
             BeginPostKill(world, $"kill-loop death target={_retainedTargetId}");
-            return;
+            return false;
         }
 
         if (!world.Npcs.TryGetValue(_retainedTargetId, out var target) || !IsValidTarget(world, _retainedTargetId, combat))
         {
             ResetCombatState(world, "kill-loop target invalid");
-            return;
+            return false;
         }
 
         if (world.PositionConfidence == PositionConfidence.Unknown && DateTime.UtcNow > _phaseSince.AddMilliseconds(500))
@@ -282,21 +280,23 @@ public sealed class AutoCombatTask : IBotTask
             _pendingTargetId = _retainedTargetId;
             _lastTargetAction = DateTime.UtcNow;
             await sender.SendAsync(BuildTargetPacket(target, combat, world), ct);
-            return;
+            return false;
         }
 
         if (await TryCastSkillAsync(world, sender, profile, openingOnly: false, ct))
-            return;
+            return false;
 
 
         if (DateTime.UtcNow > _lastReattack.AddMilliseconds(Math.Max(1000, combat.ReattackIntervalMs)))
         {
             await SendAttackAsync(target, combat, sender, world, ct);
             _lastReattack = DateTime.UtcNow;
+            return true;
         }
+        return false;
     }
 
-    private async Task HandlePostKillAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
+    private async Task<bool> HandlePostKillAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         var spoilCfg = profile.Spoil;
         if (!_postKillSweepDone &&
@@ -315,7 +315,7 @@ public sealed class AutoCombatTask : IBotTask
             _postKillSweepDone = true;
             world.SpoiledNpcs.TryRemove(_postKillTargetId, out _);
             Debug($"sweep corpse target={_postKillTargetId}");
-            return;
+            return false;
         }
 
         _postKillSweepDone = true;
@@ -329,19 +329,20 @@ public sealed class AutoCombatTask : IBotTask
             _postKillCancelledTarget = true;
             _phaseSince = DateTime.UtcNow;
             Debug($"cancel target after kill target={_postKillTargetId}");
-            return;
+            return false;
         }
 
         if (DateTime.UtcNow < _phaseSince.AddMilliseconds(Math.Max(100, profile.Combat.PostKillSpawnWaitMs)))
-            return;
+            return false;
 
         _lootWindowEndsAt = DateTime.UtcNow.AddMilliseconds(Math.Max(500, profile.Combat.PostKillLootWindowMs));
         _lootWindowEmptyPolls = 0;
         Trace("loot-window-opened", $"target={_postKillTargetId} until={_lootWindowEndsAt:O}");
         SetPhase(world, CombatPhase.Looting, $"loot window opened target={_postKillTargetId}");
+        return false;
     }
 
-    private async Task HandleLootingAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
+    private async Task<bool> HandleLootingAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         var item = PickLootItem(world, profile);
         if (item == null)
@@ -351,12 +352,12 @@ public sealed class AutoCombatTask : IBotTask
             {
                 FinishPostKill(world, "loot window closed");
             }
-            return;
+            return false;
         }
 
         _lootWindowEmptyPolls = 0;
         if (DateTime.UtcNow < _lastPickup.AddMilliseconds(300))
-            return;
+            return false;
 
         Debug($"pickup item={item.ObjectId} dropper={item.DropperObjectId} dist={item.DistanceTo(world.Me):F0}");
         item.PickupAttempts++;
@@ -375,6 +376,8 @@ public sealed class AutoCombatTask : IBotTask
         }
 
         _lastPickup = DateTime.UtcNow;
+        world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(500);
+        return true;
     }
 
     private async Task<bool> TrySpoilAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
@@ -475,7 +478,7 @@ public sealed class AutoCombatTask : IBotTask
         return false;
     }
 
-    private async Task SendAttackAsync(Npc target, CombatConfig combat, PacketSender sender, GameWorld world, CancellationToken ct)
+    private async Task<bool> SendAttackAsync(Npc target, CombatConfig combat, PacketSender sender, GameWorld world, CancellationToken ct)
     {
         var packet = combat.UseTargetEnter
             ? GamePackets.TargetEnter(target.ObjectId, world.Me.X, world.Me.Y, world.Me.Z)
@@ -487,6 +490,8 @@ public sealed class AutoCombatTask : IBotTask
         world.Me.PendingTargetId = 0;
         _pendingTargetId = 0;
         Debug($"attack sent target={target.ObjectId} pos=({target.X},{target.Y},{target.Z}) dist={target.DistanceTo(world.Me):F0}");
+        world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(200);
+        return true;
     }
 
     private (byte opcode, byte[] payload) BuildTargetPacket(Npc target, CombatConfig combat, GameWorld world) =>
@@ -599,6 +604,8 @@ public sealed class AutoCombatTask : IBotTask
         foreach (var npc in world.Npcs.Values)
         {
             if (!npc.IsAttackable || IsNpcEliminated(npc)) continue;
+            if (IsTargetedByOtherPlayer(world, npc.ObjectId)) continue;
+
             int zDelta = Math.Abs(npc.Z - originZ);
             if (zDelta > zLimit) continue;
 
@@ -623,6 +630,16 @@ public sealed class AutoCombatTask : IBotTask
         }
 
         return candidates;
+    }
+
+    private bool IsTargetedByOtherPlayer(GameWorld world, int npcObjectId)
+    {
+        foreach (var character in world.Characters.Values)
+        {
+            if (character.TargetId == npcObjectId)
+                return true;
+        }
+        return false;
     }
 
     private static Npc SelectBestCandidate(List<(Npc Npc, double Dist)> candidates, string targetPriority)

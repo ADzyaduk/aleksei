@@ -17,15 +17,15 @@ public sealed class AnchorTask : IBotTask
         _lastMove = DateTime.MinValue;
     }
 
-    public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
+    public async Task<bool> ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         if (DateTime.UtcNow < world.ActionLockUntilUtc)
-            return;
+            return false;
 
         var combat = profile.Combat;
-        if (!combat.Enabled || combat.AnchorLeash <= 0) return;
-        if (world.Me.IsDead || !world.Me.AnchorSet) return;
-        if (DateTime.UtcNow < _lastMove.AddSeconds(3)) return;
+        if (!combat.Enabled || combat.AnchorLeash <= 0) return false;
+        if (world.Me.IsDead || !world.Me.AnchorSet) return false;
+        if (DateTime.UtcNow < _lastMove.AddSeconds(3)) return false;
 
         var me = world.Me;
         double dist = Math.Sqrt(
@@ -34,11 +34,21 @@ public sealed class AnchorTask : IBotTask
 
         if (dist > combat.AnchorLeash)
         {
-            // Cancel target and move back to anchor
-            await sender.SendAsync(GamePackets.CancelTarget());
-            await Task.Delay(100, ct);
+            if (world.Me.TargetId != 0 && world.Me.PendingTargetId == 0)
+            {
+                await sender.SendAsync(GamePackets.CancelTarget());
+                world.Me.TargetId = 0;
+                world.Me.PendingTargetId = 0;
+                world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(150);
+                return true;
+            }
+
             await sender.SendAsync(GamePackets.Move(me.AnchorX, me.AnchorY, me.AnchorZ, me.X, me.Y, me.Z));
             _lastMove = DateTime.UtcNow;
+            world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(500); // Wait a bit after move
+            return true;
         }
+
+        return false;
     }
 }

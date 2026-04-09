@@ -36,19 +36,19 @@ public sealed class PartyModeTask : IBotTask
         _collector = collector;
     }
 
-    public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
+    public async Task<bool> ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         if (DateTime.UtcNow < world.ActionLockUntilUtc)
-            return;
+            return false;
 
         var party = profile.Party;
         if (!party.Enabled || party.Mode == PartyMode.None)
-            return;
+            return false;
 
         if (!IsSelfPositionKnown(world))
         {
             Trace("self-position-unknown", $"skip mode={party.Mode} reason=self-position-unknown");
-            return;
+            return false;
         }
 
         var actor = ResolveActor(world, party, _lastResolvedActorId);
@@ -57,7 +57,7 @@ public sealed class PartyModeTask : IBotTask
             Trace(
                 $"actor-unresolved:{party.Mode}",
                 $"skip mode={party.Mode} reason=actor-unresolved leader={party.LeaderName} assist={party.AssistName} partyLeaderId={world.PartyLeaderObjectId} members={world.Party.Count}");
-            return;
+            return false;
         }
 
         _lastResolvedActorId = actor.ObjectId;
@@ -72,15 +72,16 @@ public sealed class PartyModeTask : IBotTask
             else
             {
                 Trace($"actor-stale:{actor.ObjectId}", $"skip mode={party.Mode} actor={DescribeActor(actor)} reason=stale-position");
-                return;
+                return false;
             }
         }
 
         double distance = actor.DistanceTo(world.Me.X, world.Me.Y, world.Me.Z);
         double followDistance = Math.Max(0, party.FollowDistance);
+        bool followed = false;
         if (distance > followDistance)
         {
-            await FollowActorAsync(actor, world, sender, party, ct);
+            followed = await FollowActorAsync(actor, world, sender, party, ct);
             Trace($"move:{actor.ObjectId}", $"move actor={DescribeActor(actor)} distance={distance:F1} follow={followDistance:F1} repath={party.RepathDistance:F1}");
         }
         else
@@ -89,18 +90,18 @@ public sealed class PartyModeTask : IBotTask
         }
 
         if (party.Mode != PartyMode.Assist)
-            return;
+            return followed;
 
         if (actor.TargetId == 0)
         {
             Trace($"assist-no-target:{actor.ObjectId}", $"skip assist actor={DescribeActor(actor)} reason=no-target");
-            return;
+            return followed;
         }
 
         if (!world.Npcs.TryGetValue(actor.TargetId, out var npc) || !npc.IsAttackable || npc.IsDead)
         {
             Trace($"assist-invalid:{actor.ObjectId}:{actor.TargetId}", $"skip assist actor={DescribeActor(actor)} target={actor.TargetId} reason=invalid-target");
-            return;
+            return followed;
         }
 
         if (world.Me.TargetId != npc.ObjectId)
@@ -108,10 +109,14 @@ public sealed class PartyModeTask : IBotTask
             await sender.SendAsync(GamePackets.TargetEnter(npc.ObjectId, world.Me.X, world.Me.Y, world.Me.Z), ct);
             world.Me.TargetId = npc.ObjectId;
             world.Me.PendingTargetId = 0;
+            world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(200);
+            return true;
         }
 
         await sender.SendAsync(GamePackets.ForceAttack(), ct);
         Trace($"assist-attack:{npc.ObjectId}", $"attack assistTarget={npc.ObjectId} actor={DescribeActor(actor)}");
+        world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(1500);
+        return true;
     }
 
     private static PartyMember? ResolveActor(GameWorld world, PartyConfig party, int lastResolvedActorId)
@@ -164,7 +169,7 @@ public sealed class PartyModeTask : IBotTask
         return DateTime.UtcNow <= member.LastPositionUpdateUtc.AddMilliseconds(effectiveTimeoutMs);
     }
 
-    private async Task FollowActorAsync(PartyMember actor, GameWorld world, PacketSender sender, PartyConfig party, CancellationToken ct)
+    private async Task<bool> FollowActorAsync(PartyMember actor, GameWorld world, PacketSender sender, PartyConfig party, CancellationToken ct)
     {
         double distance = actor.DistanceTo(world.Me.X, world.Me.Y, world.Me.Z);
         double followDistance = Math.Max(0, party.FollowDistance);
@@ -186,7 +191,7 @@ public sealed class PartyModeTask : IBotTask
 
         if (DateTime.UtcNow < _lastMoveTime.AddSeconds(1) && distFromLastDest < repathDistance)
         {
-            return;
+            return false;
         }
 
         _lastMoveTime = DateTime.UtcNow;
@@ -195,6 +200,7 @@ public sealed class PartyModeTask : IBotTask
         _lastMoveDestZ = destZ;
 
         await sender.SendAsync(GamePackets.Move(destX, destY, destZ, world.Me.X, world.Me.Y, world.Me.Z), ct);
+        return true;
     }
 
     private static string DescribeActor(PartyMember actor) => PartyMemberResolver.DescribeMember(actor);

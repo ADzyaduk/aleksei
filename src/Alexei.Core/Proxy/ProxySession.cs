@@ -242,10 +242,26 @@ public sealed class ProxySession
 
     private void RecordClientPacket(byte[] plainBody)
     {
-        if (_collector == null || plainBody.Length == 0)
+        if (plainBody.Length == 0) return;
+        byte opcode = plainBody[0];
+
+        if (opcode == Opcodes.GameC2S.MoveBackwardToLocation && plainBody.Length >= 25)
+        {
+            var r = new PacketReader(plainBody.AsSpan(1).ToArray());
+            int destX = r.ReadInt32();
+            int destY = r.ReadInt32();
+            int destZ = r.ReadInt32();
+            
+            // Assume user manually moving expects their new destination to be their position
+            _world.Me.X = destX;
+            _world.Me.Y = destY;
+            _world.Me.Z = destZ;
+            _world.LastSelfMoveEvidenceUtc = DateTime.UtcNow;
+        }
+
+        if (_collector == null)
             return;
 
-        byte opcode = plainBody[0];
         byte[] payload = plainBody.AsSpan(1).ToArray();
 
         _collector.Record(

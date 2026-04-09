@@ -44,7 +44,7 @@ public sealed class BotEngine
 
     public void Start()
     {
-        _autoCombatTask.ResetRuntimeState(_world, "bot start");
+        foreach (var task in _tasks) task.ResetState(_world);
 
         if (_world.Me.ObjectId != 0)
         {
@@ -71,7 +71,7 @@ public sealed class BotEngine
     {
         IsRunning = false;
         _anchorRefreshArmedAt = DateTime.MinValue;
-        _autoCombatTask.ResetRuntimeState(_world, "bot stop");
+        foreach (var task in _tasks) task.ResetState(_world);
         _world.Me.AnchorSet = false;
         _world.Me.AnchorX = 0;
         _world.Me.AnchorY = 0;

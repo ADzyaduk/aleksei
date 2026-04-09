@@ -1,4 +1,4 @@
-﻿using Alexei.Core.Config;
+using Alexei.Core.Config;
 using Alexei.Core.Diagnostics;
 using Alexei.Core.GameState;
 using Alexei.Core.Protocol;
@@ -19,6 +19,13 @@ public sealed class PartyHealTask : IBotTask
     public PartyHealTask(PacketEvidenceCollector? collector = null)
     {
         _collector = collector;
+    }
+
+    public void ResetState(GameWorld world)
+    {
+        _lastHealBySkill.Clear();
+        _lastTraceKey = null;
+        _lastTraceUtc = DateTime.MinValue;
     }
 
     public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
@@ -80,6 +87,7 @@ public sealed class PartyHealTask : IBotTask
         var pkt = BuildSkillPacket(bestRule.SkillId, profile.Combat.CombatSkillPacket);
         await sender.SendAsync(pkt, ct);
         _lastHealBySkill[bestRule.SkillId] = DateTime.UtcNow;
+        world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(2000);
         Trace($"cast:{bestRule.SkillId}:{target.ObjectId}", $"cast skill={bestRule.SkillId} target={target.ObjectId} hpPct={target.HpPct:F1}");
     }
 

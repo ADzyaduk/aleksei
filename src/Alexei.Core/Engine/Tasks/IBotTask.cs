@@ -9,4 +9,5 @@ public interface IBotTask
     string Name { get; }
     bool IsEnabled { get; }
     Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct);
+    void ResetState(GameWorld world);
 }

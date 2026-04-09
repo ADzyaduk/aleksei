@@ -12,8 +12,16 @@ public sealed class AnchorTask : IBotTask
 
     private DateTime _lastMove = DateTime.MinValue;
 
+    public void ResetState(GameWorld world)
+    {
+        _lastMove = DateTime.MinValue;
+    }
+
     public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
+        if (DateTime.UtcNow < world.ActionLockUntilUtc)
+            return;
+
         var combat = profile.Combat;
         if (!combat.Enabled || combat.AnchorLeash <= 0) return;
         if (world.Me.IsDead || !world.Me.AnchorSet) return;

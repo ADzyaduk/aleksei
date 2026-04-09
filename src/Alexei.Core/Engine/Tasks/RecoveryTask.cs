@@ -12,8 +12,16 @@ public sealed class RecoveryTask : IBotTask
 
     private DateTime _lastAction = DateTime.MinValue;
 
+    public void ResetState(GameWorld world)
+    {
+        _lastAction = DateTime.MinValue;
+    }
+
     public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
+        if (DateTime.UtcNow < world.ActionLockUntilUtc)
+            return;
+
         var recovery = profile.Recovery;
         if (!recovery.Enabled) return;
         if (world.Me.IsDead) return;

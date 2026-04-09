@@ -12,6 +12,11 @@ public sealed class AutoHealTask : IBotTask
 
     private readonly Dictionary<int, DateTime> _lastHealBySkill = new();
 
+    public void ResetState(GameWorld world)
+    {
+        _lastHealBySkill.Clear();
+    }
+
     public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         if (!profile.Party.Enabled) return; // heal rules are in party config
@@ -35,6 +40,7 @@ public sealed class AutoHealTask : IBotTask
             var pkt = BuildSkillPacket(rule.SkillId, profile.Combat.CombatSkillPacket);
             await sender.SendAsync(pkt);
             _lastHealBySkill[rule.SkillId] = DateTime.UtcNow;
+            world.ActionLockUntilUtc = DateTime.UtcNow.AddMilliseconds(2000);
             return;
         }
     }

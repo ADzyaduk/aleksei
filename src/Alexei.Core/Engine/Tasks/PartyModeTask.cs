@@ -1,4 +1,4 @@
-﻿using Alexei.Core.Config;
+using Alexei.Core.Config;
 using Alexei.Core.Diagnostics;
 using Alexei.Core.GameState;
 using Alexei.Core.Protocol;
@@ -15,6 +15,21 @@ public sealed class PartyModeTask : IBotTask
     private string? _lastTraceKey;
     private DateTime _lastTraceUtc = DateTime.MinValue;
     private int _lastResolvedActorId;
+    private DateTime _lastMoveTime = DateTime.MinValue;
+    private int _lastMoveDestX;
+    private int _lastMoveDestY;
+    private int _lastMoveDestZ;
+
+    public void ResetState(GameWorld world)
+    {
+        _lastTraceKey = null;
+        _lastTraceUtc = DateTime.MinValue;
+        _lastResolvedActorId = 0;
+        _lastMoveTime = DateTime.MinValue;
+        _lastMoveDestX = 0;
+        _lastMoveDestY = 0;
+        _lastMoveDestZ = 0;
+    }
 
     public PartyModeTask(PacketEvidenceCollector? collector = null)
     {
@@ -23,6 +38,9 @@ public sealed class PartyModeTask : IBotTask
 
     public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
+        if (DateTime.UtcNow < world.ActionLockUntilUtc)
+            return;
+
         var party = profile.Party;
         if (!party.Enabled || party.Mode == PartyMode.None)
             return;
@@ -146,7 +164,7 @@ public sealed class PartyModeTask : IBotTask
         return DateTime.UtcNow <= member.LastPositionUpdateUtc.AddMilliseconds(effectiveTimeoutMs);
     }
 
-    private static async Task FollowActorAsync(PartyMember actor, GameWorld world, PacketSender sender, PartyConfig party, CancellationToken ct)
+    private async Task FollowActorAsync(PartyMember actor, GameWorld world, PacketSender sender, PartyConfig party, CancellationToken ct)
     {
         double distance = actor.DistanceTo(world.Me.X, world.Me.Y, world.Me.Z);
         double followDistance = Math.Max(0, party.FollowDistance);
@@ -159,6 +177,22 @@ public sealed class PartyModeTask : IBotTask
         int destX = world.Me.X + (int)Math.Round(dx / safeDistance * desiredTravel);
         int destY = world.Me.Y + (int)Math.Round(dy / safeDistance * desiredTravel);
         int destZ = world.Me.Z + (int)Math.Round(dz / safeDistance * desiredTravel);
+
+        double repathDistance = party.RepathDistance > 0 ? party.RepathDistance : 150d;
+        double dxDest = destX - _lastMoveDestX;
+        double dyDest = destY - _lastMoveDestY;
+        double dzDest = destZ - _lastMoveDestZ;
+        double distFromLastDest = Math.Sqrt(dxDest * dxDest + dyDest * dyDest + dzDest * dzDest);
+
+        if (DateTime.UtcNow < _lastMoveTime.AddSeconds(1) && distFromLastDest < repathDistance)
+        {
+            return;
+        }
+
+        _lastMoveTime = DateTime.UtcNow;
+        _lastMoveDestX = destX;
+        _lastMoveDestY = destY;
+        _lastMoveDestZ = destZ;
 
         await sender.SendAsync(GamePackets.Move(destX, destY, destZ, world.Me.X, world.Me.Y, world.Me.Z), ct);
     }

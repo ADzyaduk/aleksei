@@ -21,8 +21,17 @@ public sealed class AutoLootTask : IBotTask
         _collector = collector;
     }
 
+    public void ResetState(GameWorld world)
+    {
+        _lastPickup = DateTime.MinValue;
+        _lastDebug = DateTime.MinValue;
+    }
+
     public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
+        if (DateTime.UtcNow < world.ActionLockUntilUtc)
+            return;
+
         if (!profile.Loot.Enabled) return;
         if (world.Me.IsDead || world.Me.IsSitting) return;
         if (DateTime.UtcNow < _lastPickup.AddMilliseconds(300)) return;

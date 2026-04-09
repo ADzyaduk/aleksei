@@ -23,6 +23,13 @@ public sealed class AutoBuffTask : IBotTask
         _collector = collector;
     }
 
+    public void ResetState(GameWorld world)
+    {
+        _lastCast.Clear();
+        _lastTraceKey = null;
+        _lastTraceUtc = DateTime.MinValue;
+    }
+
     public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         if (!profile.Buffs.Enabled) return;
@@ -65,6 +72,7 @@ public sealed class AutoBuffTask : IBotTask
             var pkt = BuildSkillPacket(buff.SkillId, profile.Combat.CombatSkillPacket);
             await sender.SendAsync(pkt, ct);
             _lastCast[buff.SkillId] = now;
+            world.ActionLockUntilUtc = now.AddMilliseconds(2000);
             Trace($"cast:{buff.SkillId}", $"cast skill={buff.SkillId} target={buff.Target}");
             await Task.Delay(200, ct);
             return;

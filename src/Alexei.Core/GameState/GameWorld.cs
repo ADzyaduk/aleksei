@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 
 namespace Alexei.Core.GameState;
 
@@ -23,6 +23,7 @@ public sealed class GameWorld
     public DateTime? LastSelfMoveEvidenceUtc { get; set; }
     public DateTime? LastCombatProgressUtc { get; set; }
     public PositionConfidence PositionConfidence { get; set; } = PositionConfidence.Unknown;
+    public DateTime ActionLockUntilUtc { get; set; } = DateTime.MinValue;
 
     public event Action? Updated;
 

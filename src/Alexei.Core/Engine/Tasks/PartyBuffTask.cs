@@ -23,6 +23,13 @@ public sealed class PartyBuffTask : IBotTask
         _collector = collector;
     }
 
+    public void ResetState(GameWorld world)
+    {
+        _lastCast.Clear();
+        _lastTraceKey = null;
+        _lastTraceUtc = DateTime.MinValue;
+    }
+
     public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
         if (!profile.Party.Enabled || world.Me.IsDead)
@@ -85,6 +92,7 @@ public sealed class PartyBuffTask : IBotTask
 
             await sender.SendAsync(BuildSkillPacket(rule.SkillId, profile.Combat.CombatSkillPacket), ct);
             _lastCast[key] = now;
+            world.ActionLockUntilUtc = now.AddMilliseconds(2000);
             Trace($"cast:{rule.SkillId}:{target.ObjectId}", $"cast skill={rule.SkillId} target={targetLabel}");
             await Task.Delay(200, ct);
             return;

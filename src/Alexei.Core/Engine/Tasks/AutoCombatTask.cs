@@ -53,6 +53,9 @@ public sealed class AutoCombatTask : IBotTask
 
     public async Task ExecuteAsync(GameWorld world, PacketSender sender, CharacterProfile profile, CancellationToken ct)
     {
+        if (DateTime.UtcNow < world.ActionLockUntilUtc)
+            return;
+
         var combat = profile.Combat;
         var me = world.Me;
 
@@ -286,7 +289,7 @@ public sealed class AutoCombatTask : IBotTask
             return;
 
 
-        if (DateTime.UtcNow > _lastReattack.AddMilliseconds(Math.Max(250, combat.ReattackIntervalMs)))
+        if (DateTime.UtcNow > _lastReattack.AddMilliseconds(Math.Max(1000, combat.ReattackIntervalMs)))
         {
             await SendAttackAsync(target, combat, sender, world, ct);
             _lastReattack = DateTime.UtcNow;
@@ -552,7 +555,7 @@ public sealed class AutoCombatTask : IBotTask
         if (candidates.Count == 0)
             return null;
 
-        var pool = BuildLocalCluster(candidates, combat);
+        var pool = candidates;
         if (combat.PreferAggroTargets)
         {
             var preferredAggroPool = pool
@@ -560,6 +563,12 @@ public sealed class AutoCombatTask : IBotTask
                 .ToList();
             if (preferredAggroPool.Count > 0)
                 pool = preferredAggroPool;
+            else
+                pool = BuildLocalCluster(pool, combat);
+        }
+        else
+        {
+            pool = BuildLocalCluster(pool, combat);
         }
 
         return SelectBestCandidate(pool, combat.TargetPriority);
@@ -814,7 +823,9 @@ public sealed class AutoCombatTask : IBotTask
         SetPhase(world, CombatPhase.Idle, reason);
     }
 
-    internal void ResetRuntimeState(GameWorld world, string reason)
+    public void ResetState(GameWorld world) => ResetStateInternal(world, "task reset");
+
+    private void ResetStateInternal(GameWorld world, string reason)
     {
         _retainedTargetId = 0;
         _postKillTargetId = 0;
@@ -838,7 +849,7 @@ public sealed class AutoCombatTask : IBotTask
 
     private void ResetCombatState(GameWorld world, string reason)
     {
-        ResetRuntimeState(world, reason);
+        ResetStateInternal(world, reason);
     }
 
     private bool HasSelectionOriginOverride() => DateTime.UtcNow <= _selectionOriginOverrideUntil;

@@ -636,7 +636,7 @@ public sealed class AutoCombatTask : IBotTask
     {
         foreach (var character in world.Characters.Values)
         {
-            if (character.TargetId == npcObjectId)
+            if (character.ObjectId != world.Me.ObjectId && character.TargetId == npcObjectId)
                 return true;
         }
         return false;
@@ -964,4 +964,5 @@ public sealed class AutoCombatTask : IBotTask
         _logger?.LogInformation("[AutoCombat] {Message}", message);
     }
 }
+
 
